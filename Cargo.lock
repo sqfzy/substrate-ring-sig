@@ -271,6 +271,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "anonymous-voting"
+version = "0.1.0"
+
+[[package]]
 name = "anstream"
 version = "0.6.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3345,6 +3349,7 @@ dependencies = [
  "curve25519-dalek-derive",
  "digest 0.10.7",
  "fiat-crypto",
+ "rand_core 0.6.4",
  "rustc_version 0.4.1",
  "subtle 2.6.1",
  "zeroize",
@@ -3372,6 +3377,15 @@ dependencies = [
  "rand_core 0.6.4",
  "subtle-ng",
  "zeroize",
+]
+
+[[package]]
+name = "custom-pallet"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "polkadot-sdk-frame",
+ "scale-info",
 ]
 
 [[package]]
@@ -7577,6 +7591,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a51313c5820b0b02bd422f4b44776fbf47961755c74ce64afc73bfad10226c3"
 
 [[package]]
+name = "nazgul"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01ed30b554a75840caae8940b89290a88ad5335ed633e4d3c1b590791a0e4b01"
+dependencies = [
+ "curve25519-dalek",
+ "digest 0.10.7",
+ "rand_core 0.6.4",
+]
+
+[[package]]
 name = "netlink-packet-core"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10017,6 +10042,7 @@ dependencies = [
  "pallet-parachain-template",
  "parity-scale-codec",
  "polkadot-sdk 2503.0.1",
+ "ring_sig",
  "scale-info",
  "serde_json",
  "smallvec",
@@ -13005,6 +13031,20 @@ dependencies = [
  "libc",
  "untrusted 0.9.0",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "ring_sig"
+version = "0.1.0"
+dependencies = [
+ "curve25519-dalek",
+ "getrandom 0.2.16",
+ "nazgul",
+ "parity-scale-codec",
+ "polkadot-sdk-frame",
+ "rand_core 0.6.4",
+ "scale-info",
+ "sha2 0.10.9",
 ]
 
 [[package]]
