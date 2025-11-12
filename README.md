@@ -1,4 +1,11 @@
+该项目在 Parachain Template 基础上，基于可链接环签名实现了匿名投票功能(在`pallets/ring_sig`)。
+
+*环签名*：一种隐藏签名者身份的数字签名方案，环中的任何成员都可能是签名者，敌手无法确定签名的具体是谁。
+*可链接*：指同一签名者的多次签名可以被识别为来自同一人，但无法识别其身份。防止重复投票。
+
 <div align="center">
+
+
 
 # Polkadot SDK's Parachain Template
 

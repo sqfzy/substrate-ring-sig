@@ -87,3 +87,8 @@ StorageMap<
 
 
 # 分清楚哪些操作是链上的，哪些是链下的
+
+# benchmarking
+```
+frame-omni-bencher v1 benchmark pallet --runtime ./target/release/wbuild/parachain-template-runtime/parachain_template_runtime.wasm --pallet "ring_sig" --extrinsic "anonymous_vote" --template ./pallets/ring_sig/frame-weight-template.hbs --output ./pallets/ring_sig/src/weights.rs
+```

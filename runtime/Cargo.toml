@@ -59,7 +59,7 @@ serde_json = { workspace = true, default-features = false, features = [
 ] }
 smallvec = { workspace = true, default-features = true }
 # custom-pallet = { path = "../pallets/custom-pallet", default-features = false }
- ring_sig= { path = "../pallets/ring_sig", default-features = false }
+ring_sig= { path = "../pallets/ring_sig", default-features = false }
 
 [features]
 default = ["std"]
@@ -81,6 +81,7 @@ runtime-benchmarks = [
 	"hex-literal",
 	"pallet-parachain-template/runtime-benchmarks",
 	"polkadot-sdk/runtime-benchmarks",
+	"ring_sig/runtime-benchmarks",
 ]
 
 try-runtime = [

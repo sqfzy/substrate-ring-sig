@@ -19,6 +19,7 @@ getrandom = { version = "0.2", default-features = false, features = ["custom"] }
 
 [features]
 default = ["std"]
+runtime-benchmarks = ["frame/runtime-benchmarks"]
 std = [
   "codec/std", 
   "frame/std", 

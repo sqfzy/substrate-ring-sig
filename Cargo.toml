@@ -8,7 +8,7 @@ edition = "2021"
 [workspace]
 default-members = ["pallets/template", "runtime"]
 members = [
-    "node", "pallets/anonymous-voting", "pallets/custom-pallet", "pallets/ring_sig",
+    "node", "pallets/custom-pallet", "pallets/ring_sig",
     "pallets/template",
     "runtime",
 ]
@@ -43,4 +43,3 @@ panic = "unwind"
 codegen-units = 1
 inherits = "release"
 lto = true
-

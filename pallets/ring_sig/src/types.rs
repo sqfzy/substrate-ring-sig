@@ -1,9 +1,9 @@
 use super::*;
-use frame::prelude::*;
 use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
 };
+use frame::prelude::*;
 use nazgul::clsag::CLSAG;
 
 // RistrettoPoint (公钥) 包装器
