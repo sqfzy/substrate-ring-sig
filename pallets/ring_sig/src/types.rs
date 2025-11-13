@@ -76,3 +76,26 @@ impl<T: Config> From<CLSAGWrapper<T>> for CLSAG {
         }
     }
 }
+
+#[derive(
+    Clone, Debug, Encode, Decode, TypeInfo, PartialEq, Eq, MaxEncodedLen, DecodeWithMemTracking,
+)]
+pub enum ProposalStatus {
+    /// 正在投票
+    Voting,
+    /// 已关闭
+    Closed,
+}
+
+#[derive(
+    Clone, Debug, Encode, Decode, TypeInfo, PartialEq, Eq, MaxEncodedLen, DecodeWithMemTracking,
+)]
+#[scale_info(skip_type_params(T))]
+pub struct Proposal<T: Config> {
+    /// 创建者
+    pub creator: T::AccountId,
+    /// 描述
+    pub description: BoundedVec<u8, T::MaxDescriptionLength>,
+    /// 当前状态
+    pub status: ProposalStatus,
+}

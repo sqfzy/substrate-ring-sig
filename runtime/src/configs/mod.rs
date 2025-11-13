@@ -345,5 +345,6 @@ impl ring_sig::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type NumRingMembers = ConstU32<16>;
     type NumRingLayers = ConstU32<2>;
+    type MaxDescriptionLength = ConstU32<256>;
     type WeightInfo = ring_sig::weights::SubstrateWeight<Runtime>;
 }

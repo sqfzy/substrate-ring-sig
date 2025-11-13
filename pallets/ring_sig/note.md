@@ -89,6 +89,17 @@ StorageMap<
 # 分清楚哪些操作是链上的，哪些是链下的
 
 # benchmarking
+1. `pallets/ring_sig/Cargo.toml`
+```toml
+runtime-benchmarks = ["frame/runtime-benchmarks"]
 ```
-frame-omni-bencher v1 benchmark pallet --runtime ./target/release/wbuild/parachain-template-runtime/parachain_template_runtime.wasm --pallet "ring_sig" --extrinsic "anonymous_vote" --template ./pallets/ring_sig/frame-weight-template.hbs --output ./pallets/ring_sig/src/weights.rs
+2. `runtime/src/benchmarks.rs`
+```rust
+polkadot_sdk::frame_benchmarking::define_benchmarks!(
+    // ...
+    [ring_sig, RingSig]
+);
 ```
+3. `touch pallets/ring_sig/src/weights.rs`
+4. `cargo build --features runtime-benchmarks --release`
+5. `frame-omni-bencher v1 benchmark pallet --runtime ./target/release/wbuild/parachain-template-runtime/parachain_template_runtime.wasm --pallet "ring_sig" --extrinsic "anonymous_vote" --template ./pallets/ring_sig/frame-weight-template.hbs --output ./pallets/ring_sig/src/weights.rs`

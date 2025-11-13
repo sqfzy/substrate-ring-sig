@@ -42,7 +42,12 @@ pub mod pallet {
         type NumRingMembers: Get<u32>;
 
         // The number of columns in the ring matrix. It means how many keys each member has.
+        #[pallet::constant]
         type NumRingLayers: Get<u32>;
+
+        /// 提案描述的最大长度
+        #[pallet::constant]
+        type MaxDescriptionLength: Get<u32>;
 
         type WeightInfo: WeightInfo;
     }
@@ -56,6 +61,13 @@ pub mod pallet {
             vote: VoteOption,
             key_image: CompressedRistrettoWrapper,
         },
+        /// 一个新提案已创建
+        ProposalCreated {
+            proposal_id: ProposalId,
+            creator: T::AccountId,
+        },
+        /// 一个提案已关闭
+        ProposalClosed { proposal_id: ProposalId },
     }
 
     /// 提案 ID
@@ -70,6 +82,22 @@ pub mod pallet {
         Nay,
     }
 
+    /// 提案计数器，用于生成新的 ProposalId
+    #[pallet::storage]
+    #[pallet::getter(fn proposal_count)]
+    pub type ProposalCount<T: Config> = StorageValue<_, ProposalId, ValueQuery>;
+
+    /// 存储所有提案的详细信息
+    #[pallet::storage]
+    #[pallet::getter(fn proposals)]
+    pub type Proposals<T: Config> = StorageMap<
+        _,
+        Twox64Concat,
+        ProposalId,
+        Proposal<T>,
+        OptionQuery, // 提案可能不存在
+    >;
+
     /// 提案的计票结果
     /// Key: ProposalId
     /// Value: (赞成票数, 反对票数)
@@ -77,7 +105,7 @@ pub mod pallet {
     #[pallet::getter(fn proposal_votes)]
     pub type ProposalVotes<T: Config> = StorageMap<
         _,
-        Blake2_128Concat, // 可以遍历所有提案的投票结果
+        Twox64Concat,
         ProposalId,
         (u32, u32), // (Yea, Nay)
         ValueQuery, // 默认返回 (0, 0)，非常完美
@@ -106,21 +134,99 @@ pub mod pallet {
         BadMetadata,
         /// 投票人已对此提案投过票 (密钥镜像已使用)
         AlreadyVoted,
+        /// 提案未找到
+        ProposalNotFound,
+        /// 提案已关闭，无法投票
+        ProposalClosed,
+        /// 提案已被关闭
+        ProposalAlreadyClosed,
+        /// (如果需要权限) 只有提案创建者才能关闭
+        NotProposalCreator,
     }
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
+        /// 创建一个新提案
         #[pallet::call_index(0)]
+        #[pallet::weight(T::WeightInfo::create_proposal())]
+        pub fn create_proposal(
+            origin: OriginFor<T>,
+            description: BoundedVec<u8, T::MaxDescriptionLength>,
+        ) -> DispatchResult {
+            let creator = ensure_signed(origin)?;
+
+            // 1. 获取新 ID
+            let proposal_id = <ProposalCount<T>>::get();
+
+            // 2. 创建提案对象
+            let new_proposal = Proposal {
+                creator: creator.clone(),
+                description,
+                status: ProposalStatus::Voting,
+            };
+
+            // 3. 存储提案
+            <Proposals<T>>::insert(proposal_id, new_proposal);
+
+            // 4. 初始化投票计数
+            <ProposalVotes<T>>::insert(proposal_id, (0, 0));
+
+            // 5. 递增 ID 计数器
+            <ProposalCount<T>>::put(proposal_id.saturating_add(1));
+
+            // 6. 发送事件
+            Self::deposit_event(Event::ProposalCreated {
+                proposal_id,
+                creator,
+            });
+
+            Ok(())
+        }
+
+        /// 关闭一个提案
+        #[pallet::call_index(1)]
+        #[pallet::weight(T::WeightInfo::close_proposal())]
+        pub fn close_proposal(origin: OriginFor<T>, proposal_id: ProposalId) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            // 1. 查找提案
+            let mut proposal =
+                <Proposals<T>>::get(proposal_id).ok_or(Error::<T>::ProposalNotFound)?;
+
+            // 2. 检查权限：只有创建者能关闭
+            ensure!(proposal.creator == who, Error::<T>::NotProposalCreator);
+
+            // 3. 检查状态
+            ensure!(
+                proposal.status == ProposalStatus::Voting,
+                Error::<T>::ProposalAlreadyClosed
+            );
+
+            // 4. 更新状态
+            proposal.status = ProposalStatus::Closed;
+
+            // 5. 写回存储
+            <Proposals<T>>::insert(proposal_id, proposal);
+
+            // 6. 发送事件
+            Self::deposit_event(Event::ProposalClosed { proposal_id });
+
+            Ok(())
+        }
+
+        #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::anonymous_vote())]
         pub fn anonymous_vote(
-            _origin: OriginFor<T>,
+            origin: OriginFor<T>,
             proposal_id: ProposalId,
             vote: VoteOption,
             challenge: H256,
-            responses: Vec<H256>,
-            ring: Vec<Vec<H256>>,
-            key_images: Vec<H256>,
+            responses: BoundedVec<H256, T::NumRingMembers>,
+            ring: BoundedVec<BoundedVec<H256, T::NumRingLayers>, T::NumRingMembers>,
+            key_images: BoundedVec<H256, T::NumRingLayers>,
         ) -> DispatchResult {
+            let _who = ensure_signed(origin)?;
+
             ensure!(
                 responses.len() as u32 == T::NumRingMembers::get(),
                 Error::<T>::BadMetadata
@@ -138,6 +244,12 @@ pub mod pallet {
             ensure!(
                 key_images.len() as u32 == T::NumRingLayers::get(),
                 Error::<T>::BadMetadata
+            );
+
+            let proposal = <Proposals<T>>::get(proposal_id).ok_or(Error::<T>::ProposalNotFound)?;
+            ensure!(
+                proposal.status == ProposalStatus::Voting,
+                Error::<T>::ProposalClosed
             );
 
             let message = {
@@ -231,7 +343,7 @@ mod getrandom_impl {
     // LCG (线性同余生成器) 的参数
     const LCG_A: u64 = 6364136223846793005;
     const LCG_C: u64 = 1442695040888963407;
-    
+
     /// 用于测试的固定种子
     const INITIAL_SEED: u64 = 0xDEADBEEFCAFEBABEu64;
 
@@ -239,26 +351,27 @@ mod getrandom_impl {
 
     /// 这是一个用于 **测试** 的确定性、无锁 (lock-free) 伪随机数生成器 (PRNG).
     pub fn getrandom_runtime(dest: &mut [u8]) -> Result<(), Error> {
-        
         for chunk in dest.chunks_mut(8) {
             let update_fn = |state: u64| {
                 let new_state = state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
                 Some(new_state)
             };
 
-            let old_state = RNG_STATE.fetch_update(
-                Ordering::AcqRel,  // 成功时: 获取-释放 语义
-                Ordering::Relaxed, // 失败时: 松散 语义
-                update_fn
-            ).expect("PRNG update closure should never fail");
+            let old_state = RNG_STATE
+                .fetch_update(
+                    Ordering::AcqRel,  // 成功时: 获取-释放 语义
+                    Ordering::Relaxed, // 失败时: 松散 语义
+                    update_fn,
+                )
+                .expect("PRNG update closure should never fail");
 
             let new_state = old_state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
-            
+
             let rand_bytes = new_state.to_ne_bytes();
             let len_to_copy = chunk.len();
             chunk.copy_from_slice(&rand_bytes[..len_to_copy]);
         }
-        
+
         Ok(())
     }
 
