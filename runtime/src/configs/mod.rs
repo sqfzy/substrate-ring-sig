@@ -68,6 +68,11 @@ use super::{
 };
 use xcm_config::{RelayLocation, XcmOriginToTransactDispatchOrigin};
 
+use crate::sp_runtime::traits::ConstU128;
+use crate::MILLI_UNIT;
+use polkadot_sdk_frame::token::fungible::HoldConsideration;
+use polkadot_sdk_frame::traits::{EqualPrivilegeOnly, LinearStoragePrice};
+
 parameter_types! {
     pub const Version: RuntimeVersion = VERSION;
 
@@ -330,9 +335,47 @@ impl pallet_utility::Config for Runtime {
     type PalletsOrigin = OriginCaller;
     type WeightInfo = pallet_utility::weights::SubstrateWeight<Runtime>;
 }
-// Define counter max value runtime constant.
+
 parameter_types! {
-    pub const CounterMaxValue: u32 = 500;
+    pub const PreimageHoldReason: RuntimeHoldReason =
+        RuntimeHoldReason::Preimage(pallet_preimage::HoldReason::Preimage);
+    pub const PreimageBaseDeposit: Balance = 1 * MILLI_UNIT;
+    pub const PreimageByteDeposit: Balance = 1 * MICRO_UNIT;
+}
+
+impl pallet_preimage::Config for Runtime {
+    type WeightInfo = pallet_preimage::weights::SubstrateWeight<Runtime>;
+    type RuntimeEvent = RuntimeEvent;
+    type Currency = Balances;
+    type ManagerOrigin = EnsureRoot<AccountId>;
+    type Consideration = HoldConsideration<
+        AccountId,
+        Balances,
+        PreimageHoldReason,
+        LinearStoragePrice<PreimageBaseDeposit, PreimageByteDeposit, Balance>,
+    >;
+}
+
+parameter_types! {
+    pub MaximumSchedulerWeight: Weight = Perbill::from_percent(80) *
+        RuntimeBlockWeights::get().max_block;
+}
+
+impl pallet_scheduler::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeOrigin = RuntimeOrigin;
+    type PalletsOrigin = OriginCaller;
+    type RuntimeCall = RuntimeCall;
+    type MaximumWeight = MaximumSchedulerWeight;
+    type ScheduleOrigin = EnsureRoot<AccountId>;
+    #[cfg(feature = "runtime-benchmarks")]
+    type MaxScheduledPerBlock = ConstU32<512>;
+    #[cfg(not(feature = "runtime-benchmarks"))]
+    type MaxScheduledPerBlock = ConstU32<50>;
+    type WeightInfo = pallet_scheduler::weights::SubstrateWeight<Runtime>;
+    type OriginPrivilegeCmp = EqualPrivilegeOnly;
+    type Preimages = pallet_preimage::Pallet<Runtime>;
+    type BlockNumberProvider = frame_system::Pallet<Runtime>;
 }
 
 // // Configure custom pallet.
@@ -341,10 +384,16 @@ parameter_types! {
 //     type CounterMaxValue = CounterMaxValue;
 // }
 
-impl ring_sig::Config for Runtime {
+impl ring_sig_voting::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
-    type NumRingMembers = ConstU32<16>;
-    type NumRingLayers = ConstU32<2>;
+    type Currency = Balances;
+    type Preimages = pallet_preimage::Pallet<Runtime>;
+    type SubmissionDeposit = ConstU128<{ 10 * MICRO_UNIT }>;
+    type CreatePollOrigin = frame_system::EnsureSigned<AccountId>;
+    type ClosePollOrigin = EnsureRoot<AccountId>;
+    type RingAdminOrigin = frame_system::EnsureSigned<AccountId>;
     type MaxDescriptionLength = ConstU32<256>;
-    type WeightInfo = ring_sig::weights::SubstrateWeight<Runtime>;
+    type MaxMembersInRing = ConstU32<16>;
+    type NumRingLayers = ConstU32<2>;
+    type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
 }

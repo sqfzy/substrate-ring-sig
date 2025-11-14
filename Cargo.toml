@@ -8,7 +8,7 @@ edition = "2021"
 [workspace]
 default-members = ["pallets/template", "runtime"]
 members = [
-    "node", "pallets/custom-pallet", "pallets/ring_sig",
+    "node", "pallets/custom-pallet", "pallets/ring_sig_voting",
     "pallets/template",
     "runtime",
 ]
@@ -34,6 +34,8 @@ serde_json = { version = "1.0.132", default-features = false }
 smallvec = { version = "1.11.0", default-features = false }
 substrate-wasm-builder = { version = "26.0.1", default-features = false }
 frame = { version = "0.9.1", default-features = false, package = "polkadot-sdk-frame" }
+# pallet-scheduler = { version = "44", default-features = false }
+# # pallet-preimage = { version = "43", default-features = false }
 
 [profile.release]
 opt-level = 3

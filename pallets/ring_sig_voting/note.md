@@ -103,3 +103,47 @@ polkadot_sdk::frame_benchmarking::define_benchmarks!(
 3. `touch pallets/ring_sig/src/weights.rs`
 4. `cargo build --features runtime-benchmarks --release`
 5. `frame-omni-bencher v1 benchmark pallet --runtime ./target/release/wbuild/parachain-template-runtime/parachain_template_runtime.wasm --pallet "ring_sig" --extrinsic "anonymous_vote" --template ./pallets/ring_sig/frame-weight-template.hbs --output ./pallets/ring_sig/src/weights.rs`
+
+# 复用polkadot-sdk的pallet
+1. 以`pallet-scheduler`为例，修改`runtime/Cargo.toml`
+```toml
+polkadot-sdk = { workspace = true, features = [
+    # ...
+    "pallet-scheduler",
+], default-features = false }
+```
+2. 修改`runtime/src/lib.rs`
+```rust
+#[frame_support::runtime]
+mod runtime {
+    // ...
+    #[runtime::pallet_index(53)]
+    pub type Scheduler = pallet_scheduler;
+}
+```
+3. 修改`runtime/src/configs/mod.rs`
+```rust
+parameter_types! {
+	pub MaximumSchedulerWeight: Weight = Perbill::from_percent(80) *
+		RuntimeBlockWeights::get().max_block;
+}
+
+impl pallet_scheduler::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type RuntimeOrigin = RuntimeOrigin;
+	type PalletsOrigin = OriginCaller;
+	type RuntimeCall = RuntimeCall;
+	type MaximumWeight = MaximumSchedulerWeight;
+	type ScheduleOrigin = EnsureRoot<AccountId>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type MaxScheduledPerBlock = ConstU32<512>;
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type MaxScheduledPerBlock = ConstU32<50>;
+	type WeightInfo = pallet_scheduler::weights::SubstrateWeight<Runtime>;
+	type OriginPrivilegeCmp = EqualPrivilegeOnly;
+	type Preimages = polkadot_sdk::pallet_preimage::Pallet<Runtime>;
+	type BlockNumberProvider = frame_system::Pallet<Runtime>;
+}
+```
+
+# 可以在`polkadot-sdk/substrate/bin/node/runtime/src/lib.rs`中找到所有pallet的配置参考

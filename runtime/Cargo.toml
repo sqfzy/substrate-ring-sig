@@ -52,6 +52,8 @@ polkadot-sdk = { workspace = true, features = [
 	"staging-xcm-builder",
 	"staging-xcm-executor",
 	"pallet-utility",
+	"pallet-preimage",
+	"pallet-scheduler",
 ], default-features = false }
 scale-info = { features = ["derive"], workspace = true }
 serde_json = { workspace = true, default-features = false, features = [
@@ -59,7 +61,7 @@ serde_json = { workspace = true, default-features = false, features = [
 ] }
 smallvec = { workspace = true, default-features = true }
 # custom-pallet = { path = "../pallets/custom-pallet", default-features = false }
-ring_sig= { path = "../pallets/ring_sig", default-features = false }
+ring_sig_voting= { path = "../pallets/ring_sig_voting", default-features = false }
 
 [features]
 default = ["std"]
@@ -73,7 +75,7 @@ std = [
 	"serde_json/std",
 	"substrate-wasm-builder",
 	# "custom-pallet/std",
-	"ring_sig/std",
+	"ring_sig_voting/std",
 ]
 
 runtime-benchmarks = [
@@ -81,7 +83,7 @@ runtime-benchmarks = [
 	"hex-literal",
 	"pallet-parachain-template/runtime-benchmarks",
 	"polkadot-sdk/runtime-benchmarks",
-	"ring_sig/runtime-benchmarks",
+	"ring_sig_voting/runtime-benchmarks",
 ]
 
 try-runtime = [

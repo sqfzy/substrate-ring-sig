@@ -1,5 +1,5 @@
 [package]
-name = "ring_sig"
+name = "ring_sig_voting"
 version = "0.1.0"
 license.workspace = true
 authors.workspace = true
@@ -17,6 +17,8 @@ sha2 = { version = "0.10.9", default-features = false }
 rand_core = { version = "0.6.4", default-features = false }
 getrandom = { version = "0.2", default-features = false, features = ["custom"] }
 
+[dev-dependencies]
+
 [features]
 default = ["std"]
 runtime-benchmarks = ["frame/runtime-benchmarks"]
@@ -24,6 +26,6 @@ std = [
   "codec/std", 
   "frame/std", 
   "scale-info/std",
-  "nazgul/std", # 假设 nazgul 有 std feature
+  "nazgul/std",
   "getrandom/std",
 ]

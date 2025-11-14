@@ -24,7 +24,7 @@ mod runtime {
     pub type System = frame_system;
 
     #[runtime::pallet_index(1)]
-    pub type RingSig = ring_sig;
+    pub type RingSigVoting = ring_sig_voting;
 }
 
 // System pallet configuration
@@ -35,10 +35,11 @@ impl frame_system::Config for Test {
 
 impl ring_sig::Config for Test {
     type RuntimeEvent = RuntimeEvent;
+    type AdminOrigin = EnsureRoot<AccountId>;
+    type MaxDescriptionLength = ConstU32<256>;
     type NumRingMembers = ConstU32<16>;
     type NumRingLayers = ConstU32<2>;
-    type MaxDescriptionLength = ConstU32<256>;
-    type WeightInfo = ring_sig::weights::SubstrateWeight<Self>;
+    type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
 }
 
 // Test externalities initialization

@@ -273,11 +273,14 @@ mod runtime {
     #[runtime::pallet_index(51)]
     pub type Utility = pallet_utility;
 
-    // #[runtime::pallet_index(52)]
-    // pub type CustomPallet = custom_pallet;
+    #[runtime::pallet_index(52)]
+    pub type Preimage = pallet_preimage;
 
     #[runtime::pallet_index(53)]
-    pub type RingSig = ring_sig;
+    pub type Scheduler = pallet_scheduler;
+
+    #[runtime::pallet_index(54)]
+    pub type RingSigVoting = ring_sig_voting;
 
     #[runtime::pallet_index(0)]
     pub type System = frame_system;
