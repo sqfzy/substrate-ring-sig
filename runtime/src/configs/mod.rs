@@ -344,7 +344,7 @@ parameter_types! {
 }
 
 impl pallet_preimage::Config for Runtime {
-    type WeightInfo = pallet_preimage::weights::SubstrateWeight<Runtime>;
+    type WeightInfo = pallet_preimage::weights::SubstrateWeight<Self>;
     type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type ManagerOrigin = EnsureRoot<AccountId>;
@@ -372,7 +372,7 @@ impl pallet_scheduler::Config for Runtime {
     type MaxScheduledPerBlock = ConstU32<512>;
     #[cfg(not(feature = "runtime-benchmarks"))]
     type MaxScheduledPerBlock = ConstU32<50>;
-    type WeightInfo = pallet_scheduler::weights::SubstrateWeight<Runtime>;
+    type WeightInfo = pallet_scheduler::weights::SubstrateWeight<Self>;
     type OriginPrivilegeCmp = EqualPrivilegeOnly;
     type Preimages = pallet_preimage::Pallet<Runtime>;
     type BlockNumberProvider = frame_system::Pallet<Runtime>;
@@ -387,7 +387,7 @@ impl pallet_scheduler::Config for Runtime {
 impl ring_sig_voting::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
-    type Preimages = pallet_preimage::Pallet<Runtime>;
+    type Preimages = pallet_preimage::Pallet<Self>;
     type SubmissionDeposit = ConstU128<{ 10 * MICRO_UNIT }>;
     type CreatePollOrigin = frame_system::EnsureSigned<AccountId>;
     type ClosePollOrigin = EnsureRoot<AccountId>;

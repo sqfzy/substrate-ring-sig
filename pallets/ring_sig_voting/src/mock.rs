@@ -24,7 +24,54 @@ mod runtime {
     pub type System = frame_system;
 
     #[runtime::pallet_index(1)]
+    pub type Balances = pallet_balances;
+
+    #[runtime::pallet_index(2)]
+    pub type Preimage = pallet_preimage;
+
+    #[runtime::pallet_index(3)]
     pub type RingSigVoting = ring_sig_voting;
+}
+
+
+impl pallet_balances::Config for Runtime {
+    type MaxLocks = ConstU32<50>;
+    /// The type for recording an account's balance.
+    type Balance = Balance;
+    /// The ubiquitous event type.
+    type RuntimeEvent = RuntimeEvent;
+    type DustRemoval = ();
+    type ExistentialDeposit = ExistentialDeposit;
+    type AccountStore = System;
+    type WeightInfo = pallet_balances::weights::SubstrateWeight<Self>;
+    type MaxReserves = ConstU32<50>;
+    type ReserveIdentifier = [u8; 8];
+    type RuntimeHoldReason = RuntimeHoldReason;
+    type RuntimeFreezeReason = RuntimeFreezeReason;
+    type FreezeIdentifier = RuntimeFreezeReason;
+    type MaxFreezes = VariantCountOf<RuntimeFreezeReason>;
+    type DoneSlashHandler = ();
+}
+
+
+parameter_types! {
+    pub const PreimageHoldReason: RuntimeHoldReason =
+        RuntimeHoldReason::Preimage(pallet_preimage::HoldReason::Preimage);
+    pub const PreimageBaseDeposit: Balance = 1 * MILLI_UNIT;
+    pub const PreimageByteDeposit: Balance = 1 * MICRO_UNIT;
+}
+
+impl pallet_preimage::Config for Test {
+    type WeightInfo = pallet_preimage::weights::SubstrateWeight<Self>;
+    type RuntimeEvent = RuntimeEvent;
+    type Currency = Balances;
+    type ManagerOrigin = EnsureRoot<AccountId>;
+    type Consideration = HoldConsideration<
+        AccountId,
+        Balances,
+        PreimageHoldReason,
+        LinearStoragePrice<PreimageBaseDeposit, PreimageByteDeposit, Balance>,
+    >;
 }
 
 // System pallet configuration
@@ -33,11 +80,16 @@ impl frame_system::Config for Test {
     type Block = Block;
 }
 
-impl ring_sig::Config for Test {
+impl ring_sig_voting::Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type AdminOrigin = EnsureRoot<AccountId>;
+    type Currency = Balances;
+    type Preimages = pallet_preimage::Pallet<Runtime>;
+    type SubmissionDeposit = ConstU128<{ 10 * MICRO_UNIT }>;
+    type CreatePollOrigin = frame_system::EnsureSigned<AccountId>;
+    type ClosePollOrigin = EnsureRoot<AccountId>;
+    type RingAdminOrigin = frame_system::EnsureSigned<AccountId>;
     type MaxDescriptionLength = ConstU32<256>;
-    type NumRingMembers = ConstU32<16>;
+    type MaxMembersInRing = ConstU32<16>;
     type NumRingLayers = ConstU32<2>;
     type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
 }

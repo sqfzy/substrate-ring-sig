@@ -448,50 +448,74 @@ pub mod pallet {
     }
 }
 
-// 我们需要在区块链上执行签名的验证算法，这是确定性算法，但`nazgul`作为完整的签名库包含了签名及其它算法，
-// 这些算法依赖于 `getrandom` 来生成随机数。在区块链环境中，不允许出现外部随机源，因此使用`nazgul`时我们需要
-// 为 `getrandom` 提供一个自定义的实现。
-// 生产环境中，我们绝不会用到`getrandom`，默认backends实现为空（若调用相关代码，会报错）。
-// 但在测试环境中，我们需要使用`nazgul`来生成签名，因此这里提供一个简单的伪随机数生成器 (PRNG) 实现。
-#[cfg(any(test, feature = "runtime-benchmarks"))]
+// // 我们需要在区块链上执行签名的验证算法，这是确定性算法，但`nazgul`作为完整的签名库包含了签名及其它算法，
+// // 这些算法依赖于 `getrandom` 来生成随机数。在区块链环境中，不允许出现外部随机源，因此使用`nazgul`时我们需要
+// // 为 `getrandom` 提供一个自定义的实现。
+// // 生产环境中，我们绝不会用到`getrandom`，默认backends实现为空（若调用相关代码，会报错）。
+// // 但在测试环境中，我们需要使用`nazgul`来生成签名，因此这里提供一个简单的伪随机数生成器 (PRNG) 实现。
+// #[cfg(any(test, feature = "runtime-benchmarks"))]
+// mod getrandom_impl {
+//     use getrandom::Error;
+//
+//     use core::sync::atomic::{AtomicU64, Ordering};
+//
+//     // LCG (线性同余生成器) 的参数
+//     const LCG_A: u64 = 6364136223846793005;
+//     const LCG_C: u64 = 1442695040888963407;
+//
+//     /// 用于测试的固定种子
+//     const INITIAL_SEED: u64 = 0xDEADBEEFCAFEBABEu64;
+//
+//     static RNG_STATE: AtomicU64 = AtomicU64::new(INITIAL_SEED);
+//
+//     /// 这是一个用于 **测试** 的确定性、无锁 (lock-free) 伪随机数生成器 (PRNG).
+//     pub fn getrandom_runtime(dest: &mut [u8]) -> Result<(), Error> {
+//         for chunk in dest.chunks_mut(8) {
+//             let update_fn = |state: u64| {
+//                 let new_state = state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
+//                 Some(new_state)
+//             };
+//
+//             let old_state = RNG_STATE
+//                 .fetch_update(
+//                     Ordering::AcqRel,  // 成功时: 获取-释放 语义
+//                     Ordering::Relaxed, // 失败时: 松散 语义
+//                     update_fn,
+//                 )
+//                 .expect("PRNG update closure should never fail");
+//
+//             let new_state = old_state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
+//
+//             let rand_bytes = new_state.to_ne_bytes();
+//             let len_to_copy = chunk.len();
+//             chunk.copy_from_slice(&rand_bytes[..len_to_copy]);
+//         }
+//
+//         Ok(())
+//     }
+//
+//     // 使用 getrandom 宏来注册我们的自定义实现
+//     getrandom::register_custom_getrandom!(getrandom_runtime);
+// }
+
+// 当在 no_std (Wasm runtime) 环境下编译时,
+// 我们为 `getrandom` 注册一个自定义实现。
+#[cfg(not(feature = "std"))]
 mod getrandom_impl {
     use getrandom::Error;
 
-    use core::sync::atomic::{AtomicU64, Ordering};
-
-    // LCG (线性同余生成器) 的参数
-    const LCG_A: u64 = 6364136223846793005;
-    const LCG_C: u64 = 1442695040888963407;
-
-    /// 用于测试的固定种子
-    const INITIAL_SEED: u64 = 0xDEADBEEFCAFEBABEu64;
-
-    static RNG_STATE: AtomicU64 = AtomicU64::new(INITIAL_SEED);
-
-    /// 这是一个用于 **测试** 的确定性、无锁 (lock-free) 伪随机数生成器 (PRNG).
-    pub fn getrandom_runtime(dest: &mut [u8]) -> Result<(), Error> {
-        for chunk in dest.chunks_mut(8) {
-            let update_fn = |state: u64| {
-                let new_state = state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
-                Some(new_state)
-            };
-
-            let old_state = RNG_STATE
-                .fetch_update(
-                    Ordering::AcqRel,  // 成功时: 获取-释放 语义
-                    Ordering::Relaxed, // 失败时: 松散 语义
-                    update_fn,
-                )
-                .expect("PRNG update closure should never fail");
-
-            let new_state = old_state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
-
-            let rand_bytes = new_state.to_ne_bytes();
-            let len_to_copy = chunk.len();
-            chunk.copy_from_slice(&rand_bytes[..len_to_copy]);
-        }
-
-        Ok(())
+    /// 这是一个“虚拟”的 getrandom 实现.
+    /// Substrate runtime 必须是确定性的, 绝不能生成随机数.
+    /// 签名 (Sign) 操作必须在客户端 (链下) 完成.
+    /// 如果 Wasm runtime 中的任何代码 (错误地) 尝试调用此函数...
+    /// ...它将 panic, 这是一个安全的设计.
+    pub fn getrandom_runtime(_dest: &mut [u8]) -> Result<(), Error> {
+        // 我们返回一个错误或 panic. Panic 更能暴露逻辑错误.
+        panic!(
+            "CRITICAL: getrandom() was called in the Substrate runtime! 
+                This environment must be deterministic. 
+                All signing operations must be performed client-side."
+        );
     }
 
     // 使用 getrandom 宏来注册我们的自定义实现
