@@ -2,7 +2,7 @@
 
 pub use pallet::*;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "runtime-benchmarks"))]
 mod mock;
 
 #[cfg(test)]
@@ -16,8 +16,6 @@ use weights::WeightInfo;
 
 mod types;
 pub use types::*;
-
-mod utils;
 
 #[frame::pallet]
 pub mod pallet {
@@ -120,21 +118,30 @@ pub mod pallet {
         /// 一个投票已关闭
         PollClosed { poll_id: PollId },
         /// 一个新的公钥环被注册
-        RingGroupRegistered { 
+        RingGroupRegistered {
             ring_id: RingId,
             admin: T::AccountId,
         },
     }
 
     /// 提案 ID
-    pub type PollId = u32;
+    pub type PollId = u64;
 
     /// 可重用公钥环的 ID
-    pub type RingId = u32;
+    pub type RingId = u64;
 
     /// 投票选项
     #[derive(
-        Encode, Decode, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen, DecodeWithMemTracking,
+        Encode,
+        Decode,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+        DecodeWithMemTracking,
     )]
     pub enum VoteOption {
         Yea,
@@ -198,13 +205,7 @@ pub mod pallet {
     /// 存储每个投票 *所使用* 的公钥环 ID
     #[pallet::storage]
     #[pallet::getter(fn poll_ring_id)]
-    pub type PollRingId<T: Config> = StorageMap<
-        _,
-        Twox64Concat,
-        PollId,
-        RingId, // 仅存储 ID
-        OptionQuery,
-    >;
+    pub type PollRingId<T: Config> = StorageMap<_, Twox64Concat, PollId, RingId, OptionQuery>;
 
     /// 存储投票的元数据哈希
     #[pallet::storage]
@@ -223,10 +224,10 @@ pub mod pallet {
         ///
         /// 只有 `RingAdminOrigin` 可以调用。
         #[pallet::call_index(0)]
-        #[pallet::weight(0)] // TODO: Benchmarking (权重应与 members.len() 相关)
+        #[pallet::weight(0)] // TODO: Benchmarking (权重应与 ring.len() 相关)
         pub fn register_ring_group(
             origin: OriginFor<T>,
-            members: RingMatrix<T>,
+            ring: BoundedVec<BoundedVec<H256, T::NumRingLayers>, T::MaxMembersInRing>,
         ) -> DispatchResult {
             // 1. 权限检查
             let admin = T::RingAdminOrigin::ensure_origin(origin)?;
@@ -235,7 +236,19 @@ pub mod pallet {
             let ring_id = <RingGroupCount<T>>::get();
 
             // 3. 存储
-            <RingGroups<T>>::insert(ring_id, members);
+            let ring: RingMatrix<T> = ring
+                .into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .map(|h| CompressedRistrettoWrapper(h.0))
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap()
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            <RingGroups<T>>::insert(ring_id, ring);
 
             // 4. 递增 ID
             <RingGroupCount<T>>::put(ring_id.saturating_add(1));
@@ -253,7 +266,7 @@ pub mod pallet {
             origin: OriginFor<T>,
             description: BoundedVec<u8, T::MaxDescriptionLength>,
             ring_id: RingId,
-            metadata_hash: Option<T::Hash>, // (新) 元数据哈希
+            metadata_hash: Option<T::Hash>, // 元数据哈希
         ) -> DispatchResult {
             // 1. 权限检查
             let creator = T::CreatePollOrigin::ensure_origin(origin)?;
@@ -303,7 +316,11 @@ pub mod pallet {
             <PollCount<T>>::put(poll_id.saturating_add(1));
 
             // 9. 发送事件
-            Self::deposit_event(Event::PollCreated { poll_id, ring_id , creator,});
+            Self::deposit_event(Event::PollCreated {
+                poll_id,
+                ring_id,
+                creator,
+            });
 
             Ok(())
         }
@@ -324,17 +341,17 @@ pub mod pallet {
                 Error::<T>::PollAlreadyClosed
             );
 
-            // 4. (新) 退还押金
+            // 4. 退还押金
             T::Currency::unreserve(&poll.creator, poll.submission_deposit.amount);
 
             // 5. 更新状态
             poll.status = PollStatus::Closed;
             <Polls<T>>::insert(poll_id, poll);
 
-            // 6. (新) 清理存储 (可选，但推荐)
+            // 6. 清理存储
             <PollRingId<T>>::remove(poll_id);
             <PollMetadata<T>>::remove(poll_id);
-            // 注意：我们保留 PollVotes (计票结果) 和 UsedKeyImages (防双花记录)
+            // 注意：保留 PollVotes (计票结果) 和 UsedKeyImages (防双花记录)
 
             // 7. 发送事件
             Self::deposit_event(Event::PollClosed { poll_id });
@@ -361,8 +378,7 @@ pub mod pallet {
 
             // 2. 从存储中获取权威的公钥环
             let ring_id = <PollRingId<T>>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
-            let ring_matrix = <RingGroups<T>>::get(ring_id)
-                .ok_or(Error::<T>::RingGroupNotFound)?;
+            let ring_matrix = <RingGroups<T>>::get(ring_id).ok_or(Error::<T>::RingGroupNotFound)?;
 
             // 3. 验证输入长度
             ensure!(
@@ -448,74 +464,50 @@ pub mod pallet {
     }
 }
 
-// // 我们需要在区块链上执行签名的验证算法，这是确定性算法，但`nazgul`作为完整的签名库包含了签名及其它算法，
-// // 这些算法依赖于 `getrandom` 来生成随机数。在区块链环境中，不允许出现外部随机源，因此使用`nazgul`时我们需要
-// // 为 `getrandom` 提供一个自定义的实现。
-// // 生产环境中，我们绝不会用到`getrandom`，默认backends实现为空（若调用相关代码，会报错）。
-// // 但在测试环境中，我们需要使用`nazgul`来生成签名，因此这里提供一个简单的伪随机数生成器 (PRNG) 实现。
-// #[cfg(any(test, feature = "runtime-benchmarks"))]
-// mod getrandom_impl {
-//     use getrandom::Error;
-//
-//     use core::sync::atomic::{AtomicU64, Ordering};
-//
-//     // LCG (线性同余生成器) 的参数
-//     const LCG_A: u64 = 6364136223846793005;
-//     const LCG_C: u64 = 1442695040888963407;
-//
-//     /// 用于测试的固定种子
-//     const INITIAL_SEED: u64 = 0xDEADBEEFCAFEBABEu64;
-//
-//     static RNG_STATE: AtomicU64 = AtomicU64::new(INITIAL_SEED);
-//
-//     /// 这是一个用于 **测试** 的确定性、无锁 (lock-free) 伪随机数生成器 (PRNG).
-//     pub fn getrandom_runtime(dest: &mut [u8]) -> Result<(), Error> {
-//         for chunk in dest.chunks_mut(8) {
-//             let update_fn = |state: u64| {
-//                 let new_state = state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
-//                 Some(new_state)
-//             };
-//
-//             let old_state = RNG_STATE
-//                 .fetch_update(
-//                     Ordering::AcqRel,  // 成功时: 获取-释放 语义
-//                     Ordering::Relaxed, // 失败时: 松散 语义
-//                     update_fn,
-//                 )
-//                 .expect("PRNG update closure should never fail");
-//
-//             let new_state = old_state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
-//
-//             let rand_bytes = new_state.to_ne_bytes();
-//             let len_to_copy = chunk.len();
-//             chunk.copy_from_slice(&rand_bytes[..len_to_copy]);
-//         }
-//
-//         Ok(())
-//     }
-//
-//     // 使用 getrandom 宏来注册我们的自定义实现
-//     getrandom::register_custom_getrandom!(getrandom_runtime);
-// }
-
-// 当在 no_std (Wasm runtime) 环境下编译时,
-// 我们为 `getrandom` 注册一个自定义实现。
-#[cfg(not(feature = "std"))]
+// 我们需要在区块链上执行签名的验证算法，这是确定性算法，但`nazgul`作为完整的签名库包含了签名及其它算法，
+// 这些算法依赖于 `getrandom` 来生成随机数。在区块链环境中，不允许出现外部随机源，因此使用`nazgul`时我们需要
+// 为 `getrandom` 提供一个自定义的实现。
+// 生产环境中，我们绝不会用到`getrandom`，默认backends实现为空（若调用相关代码，会报错）。
+// 但在测试环境中，我们需要使用`nazgul`来生成签名，因此这里提供一个简单的伪随机数生成器 (PRNG) 实现。
+#[cfg(any(test, feature = "runtime-benchmarks"))]
 mod getrandom_impl {
     use getrandom::Error;
 
-    /// 这是一个“虚拟”的 getrandom 实现.
-    /// Substrate runtime 必须是确定性的, 绝不能生成随机数.
-    /// 签名 (Sign) 操作必须在客户端 (链下) 完成.
-    /// 如果 Wasm runtime 中的任何代码 (错误地) 尝试调用此函数...
-    /// ...它将 panic, 这是一个安全的设计.
-    pub fn getrandom_runtime(_dest: &mut [u8]) -> Result<(), Error> {
-        // 我们返回一个错误或 panic. Panic 更能暴露逻辑错误.
-        panic!(
-            "CRITICAL: getrandom() was called in the Substrate runtime! 
-                This environment must be deterministic. 
-                All signing operations must be performed client-side."
-        );
+    use core::sync::atomic::{AtomicU64, Ordering};
+
+    // LCG (线性同余生成器) 的参数
+    const LCG_A: u64 = 6364136223846793005;
+    const LCG_C: u64 = 1442695040888963407;
+
+    /// 用于测试的固定种子
+    const INITIAL_SEED: u64 = 0xDEADBEEFCAFEBABEu64;
+
+    static RNG_STATE: AtomicU64 = AtomicU64::new(INITIAL_SEED);
+
+    /// 这是一个用于 **测试** 的确定性、无锁 (lock-free) 伪随机数生成器 (PRNG).
+    pub fn getrandom_runtime(dest: &mut [u8]) -> Result<(), Error> {
+        for chunk in dest.chunks_mut(8) {
+            let update_fn = |state: u64| {
+                let new_state = state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
+                Some(new_state)
+            };
+
+            let old_state = RNG_STATE
+                .fetch_update(
+                    Ordering::AcqRel,  // 成功时: 获取-释放 语义
+                    Ordering::Relaxed, // 失败时: 松散 语义
+                    update_fn,
+                )
+                .expect("PRNG update closure should never fail");
+
+            let new_state = old_state.wrapping_mul(LCG_A).wrapping_add(LCG_C);
+
+            let rand_bytes = new_state.to_ne_bytes();
+            let len_to_copy = chunk.len();
+            chunk.copy_from_slice(&rand_bytes[..len_to_copy]);
+        }
+
+        Ok(())
     }
 
     // 使用 getrandom 宏来注册我们的自定义实现

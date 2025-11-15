@@ -6,6 +6,7 @@ use curve25519_dalek::{
 use frame::deps::frame_support::traits::Currency;
 use frame::prelude::*;
 use nazgul::clsag::CLSAG;
+use scale_info::prelude::vec::Vec;
 
 /// 货币余额
 pub type BalanceOf<T> =
@@ -34,6 +35,12 @@ impl From<CompressedRistrettoWrapper> for RistrettoPoint {
     }
 }
 
+impl From<H256> for CompressedRistrettoWrapper {
+    fn from(hash: H256) -> Self {
+        CompressedRistrettoWrapper(hash.0)
+    }
+}
+
 #[derive(
     Clone, Debug, Encode, Decode, TypeInfo, PartialEq, Eq, MaxEncodedLen, DecodeWithMemTracking,
 )]
@@ -48,6 +55,12 @@ impl From<Scalar> for ScalarWrapper {
 impl From<ScalarWrapper> for Scalar {
     fn from(wrapper: ScalarWrapper) -> Self {
         Scalar::from_canonical_bytes(wrapper.0).expect("Invalid Scalar bytes")
+    }
+}
+
+impl From<H256> for ScalarWrapper {
+    fn from(hash: H256) -> Self {
+        ScalarWrapper(hash.0)
     }
 }
 
@@ -101,7 +114,16 @@ pub struct Deposit<AccountId, Balance> {
 }
 
 #[derive(
-    Clone, Debug, Encode, Decode, TypeInfo, PartialEq, Eq, MaxEncodedLen, DecodeWithMemTracking,
+    Clone,
+    Copy,
+    Debug,
+    Encode,
+    Decode,
+    TypeInfo,
+    PartialEq,
+    Eq,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
 )]
 pub enum PollStatus {
     /// 正在投票

@@ -15,10 +15,14 @@ nazgul = { version= "2.1", default-features = false, features = ["no_std"] }
 curve25519-dalek = { version = "4.1.3", default-features = false }
 sha2 = { version = "0.10.9", default-features = false }
 rand_core = { version = "0.6.4", default-features = false }
-rand_chacha = { version = "0.9", default-features = false }
+# rand_chacha = { version = "0.9", default-features = false }
 getrandom = { version = "0.2", default-features = false, features = ["custom"] }
 
-[dev-dependencies]
+# [dev-dependencies]
+polkadot-sdk = { workspace = true, default-features = false, features = [
+  "pallet-balances",
+  "pallet-preimage"
+] }
 
 [features]
 default = ["std"]
@@ -29,4 +33,5 @@ std = [
   "scale-info/std",
   "nazgul/std",
   "getrandom/std",
+  "polkadot-sdk/std",
 ]

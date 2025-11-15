@@ -10,8 +10,8 @@ pub fn gen_signature<T: crate::pallet::Config>(
     u32,
     VoteOption,
     H256,
-    BoundedVec<H256, T::NumRingMembers>,
-    BoundedVec<BoundedVec<H256, T::NumRingLayers>, T::NumRingMembers>,
+    BoundedVec<H256, T::MaxMembersInRing>,
+    BoundedVec<BoundedVec<H256, T::NumRingLayers>, T::MaxMembersInRing>,
     BoundedVec<H256, T::NumRingLayers>,
 ) {
     use curve25519_dalek::ristretto::RistrettoPoint;
@@ -23,7 +23,7 @@ pub fn gen_signature<T: crate::pallet::Config>(
 
     let mut csprng = OsRng;
     let secret_index = 1;
-    let nr = T::NumRingMembers::get() as usize;
+    let nr = T::MaxMembersInRing::get() as usize;
     let nc = T::NumRingLayers::get() as usize;
 
     let ks: Vec<Scalar> = (0..nc).map(|_| Scalar::random(&mut csprng)).collect();
@@ -47,7 +47,7 @@ pub fn gen_signature<T: crate::pallet::Config>(
 
     let challenge: H256 = signature.challenge.to_bytes().into();
 
-    let responses: BoundedVec<H256, T::NumRingMembers> = signature
+    let responses: BoundedVec<H256, T::MaxMembersInRing> = signature
         .responses
         .iter()
         .map(|r| r.to_bytes().into())
@@ -63,7 +63,7 @@ pub fn gen_signature<T: crate::pallet::Config>(
         .try_into()
         .unwrap();
 
-    let ring: BoundedVec<BoundedVec<H256, T::NumRingLayers>, T::NumRingMembers> = signature
+    let ring: BoundedVec<BoundedVec<H256, T::NumRingLayers>, T::MaxMembersInRing> = signature
         .ring
         .iter()
         .map(|layer| {

@@ -384,16 +384,16 @@ impl pallet_scheduler::Config for Runtime {
 //     type CounterMaxValue = CounterMaxValue;
 // }
 
-impl ring_sig_voting::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
-    type Currency = Balances;
-    type Preimages = pallet_preimage::Pallet<Self>;
-    type SubmissionDeposit = ConstU128<{ 10 * MICRO_UNIT }>;
-    type CreatePollOrigin = frame_system::EnsureSigned<AccountId>;
-    type ClosePollOrigin = EnsureRoot<AccountId>;
-    type RingAdminOrigin = frame_system::EnsureSigned<AccountId>;
-    type MaxDescriptionLength = ConstU32<256>;
-    type MaxMembersInRing = ConstU32<16>;
-    type NumRingLayers = ConstU32<2>;
-    type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
-}
+// impl ring_sig_voting::Config for Runtime {
+//     type RuntimeEvent = RuntimeEvent;
+//     type Currency = Balances;
+//     type Preimages = pallet_preimage::Pallet<Self>;
+//     type SubmissionDeposit = ConstU128<{ 10 * MICRO_UNIT }>;
+//     type CreatePollOrigin = frame_system::EnsureSigned<AccountId>;
+//     type ClosePollOrigin = EnsureRoot<AccountId>;
+//     type RingAdminOrigin = frame_system::EnsureSigned<AccountId>;
+//     type MaxDescriptionLength = ConstU32<256>;
+//     type MaxMembersInRing = ConstU32<16>;
+//     type NumRingLayers = ConstU32<2>;
+//     type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
+// }

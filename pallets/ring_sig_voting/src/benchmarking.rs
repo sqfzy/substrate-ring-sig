@@ -4,81 +4,130 @@ use frame::{deps::frame_benchmarking::v2::*, prelude::*};
 #[benchmarks]
 mod benchmarks {
     use super::*;
-    #[cfg(any(test, feature = "runtime-benchmarks"))]
+    use crate::mock::*;
     use crate::pallet::Pallet as RingSigVoting;
-    use crate::utils::gen_signature;
     use frame_system::RawOrigin;
 
     #[benchmark]
-    fn create_proposal() {
+    fn register_ring_group() {
         let caller: T::AccountId = whitelisted_caller();
-        let description = b"Benchmark Poll".to_vec();
+        let ring = gen_ring::<T>();
 
         #[extrinsic_call]
-        RingSigVoting::create_proposal(
-            RawOrigin::Signed(caller),
-            description.clone().try_into().unwrap(),
-        );
+        RingSigVoting::register_ring_group(RawOrigin::Signed(caller), ring.clone()).unwrap();
 
-        let proposal = Polls::<T>::get(0).unwrap();
-        assert_eq!(proposal.description.into_inner(), description);
-        assert_eq!(proposal.status, PollStatus::Voting);
+        assert!(RingGroups::<T>::get(0).is_some());
     }
 
     #[benchmark]
-    fn close_proposal() {
+    fn create_poll() {
         let caller: T::AccountId = whitelisted_caller();
-        let description = b"Benchmark Poll".to_vec();
+        let poll_id = 0;
+        let description = b"Poll 0".to_vec();
+        let ring_id = 0;
+        let ring = gen_ring::<T>();
 
-        RingSigVoting::<T>::create_proposal(
+        RingSigVoting::<T>::register_ring_group(
             RawOrigin::Signed(caller.clone()).into(),
+            ring.clone(),
+        )
+        .unwrap();
+        assert!(RingGroups::<T>::get(ring_id).is_some());
+
+        #[extrinsic_call]
+        RingSigVoting::create_poll(
+            RawOrigin::Signed(caller),
             description.clone().try_into().unwrap(),
+            poll_id,
+            None,
         )
         .unwrap();
 
-        #[extrinsic_call]
-        RingSigVoting::close_proposal(RawOrigin::Signed(caller), 0);
+        let poll = Polls::<T>::get(poll_id).unwrap();
+        assert_eq!(poll.description.into_inner(), description);
+        assert_eq!(poll.status, PollStatus::Voting);
+    }
 
-        let proposal = Polls::<T>::get(0).unwrap();
-        assert_eq!(proposal.status, PollStatus::Closed);
+    #[benchmark]
+    fn close_poll() {
+        let caller: T::AccountId = whitelisted_caller();
+        let poll_id = 0;
+        let description = b"Poll 0".to_vec();
+        let ring_id = 0;
+        let ring = gen_ring::<T>();
+
+        new_test_ext().execute_with(|| {
+            System::set_block_number(1);
+
+            assert_ok!(RingSigVoting::register_ring_group(
+                RuntimeOrigin::signed(ALICE),
+                ring,
+            ));
+            assert!(RingGroups::<T>::get(ring_id).is_some());
+
+            assert_ok!(RingSigVoting::create_poll(
+                RuntimeOrigin::signed(ALICE),
+                description.clone().try_into().unwrap(),
+                0,
+                None,
+            ));
+            let poll = Polls::<T>::get(poll_id).unwrap();
+            assert_eq!(poll.description.into_inner(), description);
+            assert_eq!(poll.status, PollStatus::Voting);
+
+            #[extrinsic_call]
+            RingSigVoting::close_poll(RuntimeOrigin::root(), poll_id).unwrap();
+            assert_eq!(Polls::<T>::get(poll_id).unwrap().status, PollStatus::Closed);
+        });
     }
 
     #[benchmark]
     fn anonymous_vote() {
         let caller: T::AccountId = whitelisted_caller();
 
-        let description = b"Benchmark Poll".to_vec();
+        let vote = VoteOption::Yea;
+        let poll_id = 0;
+        let description = b"Poll 0".to_vec();
+        let ring_id = 0;
+        let (challenge, responses, ring, key_images) = gen_signature::<T>(poll_id, vote);
 
-        RingSigVoting::<T>::create_proposal(
-            RawOrigin::Signed(caller.clone()).into(),
-            description.clone().try_into().unwrap(),
-        )
-        .unwrap();
+        new_test_ext().execute_with(|| {
+            System::set_block_number(1);
 
-        let proposal = Polls::<T>::get(0).unwrap();
-        assert_eq!(proposal.description.into_inner(), description);
-        assert_eq!(proposal.status, PollStatus::Voting);
+            assert_ok!(RingSigVoting::register_ring_group(
+                RuntimeOrigin::signed(ALICE),
+                ring.clone(),
+            ));
+            assert!(RingGroups::<T>::get(ring_id).is_some());
 
-        let (proposal_id, vote, challenge, responses, ring, key_images) =
-            gen_signature::<T>(0, VoteOption::Yea);
+            assert_ok!(RingSigVoting::create_poll(
+                RuntimeOrigin::signed(ALICE),
+                description.clone().try_into().unwrap(),
+                0,
+                None,
+            ));
+            let poll = Polls::<T>::get(poll_id).unwrap();
+            assert_eq!(poll.description.into_inner(), description);
+            assert_eq!(poll.status, PollStatus::Voting);
 
-        #[extrinsic_call]
-        RingSigVoting::anonymous_vote(
-            RawOrigin::Signed(caller),
-            proposal_id,
-            vote,
-            challenge,
-            responses,
-            ring,
-            key_images,
-        );
+            #[extrinsic_call]
+            RingSigVoting::anonymous_vote(
+                RuntimeOrigin::signed(1),
+                poll_id,
+                vote,
+                challenge,
+                responses,
+                key_images,
+            )
+            .unwrap();
 
-        assert_eq!(PollVotes::<T>::get(proposal_id), (1, 0));
+            assert_eq!(PollVotes::<T>::get(poll_id), (1, 0));
+        });
     }
 
     impl_benchmark_test_suite!(
         RingSigVoting,
         crate::mock::new_test_ext(),
-        crate::mock::Test
+        crate::mock:T:
     );
 }
