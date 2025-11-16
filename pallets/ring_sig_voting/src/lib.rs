@@ -21,6 +21,7 @@ pub use types::*;
 pub mod pallet {
     use super::*;
     use crate::types::BalanceOf;
+    use codec::{Codec, EncodeLike};
     use frame::deps::frame_support::traits::{
         EnsureOrigin, Get, QueryPreimage, ReservableCurrency, StorePreimage,
     };
@@ -29,6 +30,11 @@ pub mod pallet {
 
     use nazgul::{clsag::CLSAG, traits::Verify};
     use sha2::Sha512;
+
+    pub trait TallyLogic<Vote, Tally> {
+        /// 根据一张选票 (Vote) 更新计票结果 (Tally)
+        fn update_tally(vote: &Vote, tally: &mut Tally) -> DispatchResult;
+    }
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -64,6 +70,24 @@ pub mod pallet {
 
         /// 谁有权注册和管理公钥环
         type RingAdminOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
+
+        /// 投票的数据结构。
+        /// Runtime 可以将其定义为 Enum (赞成/反对) 或 Vec (评分)
+        type Vote: Codec + EncodeLike + TypeInfo + Clone + Eq + Debug + MaxEncodedLen;
+
+        /// 存储计票结果的数据结构。
+        /// Runtime 可以将其定义为 (u32, u32) 或 BoundedVec<QuestionStats, ...>
+        type Tally: Codec
+            + EncodeLike
+            + TypeInfo
+            + Clone
+            + Eq
+            + Debug
+            + Default // 必须能默认初始化 (例如 (0, 0) 或空 Vec)
+            + MaxEncodedLen;
+
+        /// 实现了计票逻辑的类型
+        type TallyHandler: TallyLogic<Self::Vote, Self::Tally>;
 
         /// 提案描述的最大长度
         #[pallet::constant]
@@ -106,7 +130,7 @@ pub mod pallet {
         /// 一张匿名选票已成功计入
         VoteTallied {
             poll_id: PollId,
-            vote: VoteOption,
+            vote: T::Vote,
             key_image: CompressedRistrettoWrapper,
         },
         /// 一个新投票已创建
@@ -159,15 +183,13 @@ pub mod pallet {
     pub type Polls<T: Config> = StorageMap<_, Twox64Concat, PollId, Poll<T>, OptionQuery>;
 
     /// 投票的计票结果
-    /// Key: PollId
-    /// Value: (赞成票数, 反对票数)
     #[pallet::storage]
     #[pallet::getter(fn poll_votes)]
     pub type PollVotes<T: Config> = StorageMap<
         _,
         Twox64Concat,
         PollId,
-        (u32, u32), // (Yea, Nay)
+        T::Tally,
         ValueQuery, // 默认返回 (0, 0)，非常完美
     >;
 
@@ -304,7 +326,7 @@ pub mod pallet {
 
             // 7. 存储
             <Polls<T>>::insert(poll_id, new_poll);
-            <PollVotes<T>>::insert(poll_id, (0, 0));
+            <PollVotes<T>>::insert(poll_id, T::Tally::default());
             <PollRingId<T>>::insert(poll_id, ring_id);
             if let Some(hash) = metadata_hash {
                 <PollMetadata<T>>::insert(poll_id, hash);
@@ -363,7 +385,7 @@ pub mod pallet {
         pub fn anonymous_vote(
             origin: OriginFor<T>,
             poll_id: PollId,
-            vote: VoteOption,
+            vote: T::Vote,
             challenge: H256,
             responses: BoundedVec<H256, T::MaxMembersInRing>,
             key_images: BoundedVec<H256, T::NumRingLayers>,
@@ -446,10 +468,7 @@ pub mod pallet {
             <UsedKeyImages<T>>::insert(&poll_id, &main_key_image, ());
 
             // 8. 计票
-            PollVotes::<T>::mutate(poll_id, |(yea, nay)| match vote {
-                VoteOption::Yea => *yea += 1,
-                VoteOption::Nay => *nay += 1,
-            });
+            PollVotes::<T>::mutate(poll_id, |tally| T::TallyHandler::update_tally(&vote, tally))?;
 
             Self::deposit_event(Event::VoteTallied {
                 poll_id,

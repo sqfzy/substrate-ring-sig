@@ -378,6 +378,8 @@ impl pallet_scheduler::Config for Runtime {
     type BlockNumberProvider = frame_system::Pallet<Runtime>;
 }
 
+use ring_sig_voting::simple_voting::{Tally, TallyHandler, Vote};
+
 impl ring_sig_voting::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
@@ -386,6 +388,9 @@ impl ring_sig_voting::Config for Runtime {
     type CreatePollOrigin = frame_system::EnsureSigned<AccountId>;
     type ClosePollOrigin = EnsureRoot<AccountId>;
     type RingAdminOrigin = frame_system::EnsureSigned<AccountId>;
+    type Vote = Vote;
+    type Tally = Tally;
+    type TallyHandler = TallyHandler;
     type MaxDescriptionLength = ConstU32<256>;
     type MaxMembersInRing = ConstU32<16>;
     type NumRingLayers = ConstU32<2>;

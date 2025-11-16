@@ -1,7 +1,5 @@
-use crate as ring_sig_voting;
-use crate::{PollId, RingId, VoteOption};
-use frame::{prelude::*, runtime::prelude::*};
-use polkadot_sdk::{pallet_balances, pallet_preimage};
+use crate::{types::simple_voting::*, PollId};
+use frame::prelude::*;
 use scale_info::prelude::vec::Vec;
 
 use curve25519_dalek::ristretto::RistrettoPoint;
@@ -17,7 +15,10 @@ pub use tests::*;
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use frame::testing_prelude::*;
+    use crate as ring_sig_voting;
+    use crate::RingId;
+    use frame::{runtime::prelude::*, testing_prelude::*};
+    use polkadot_sdk::{pallet_balances, pallet_preimage};
 
     pub const ALICE: u64 = 1;
     pub const BOB: u64 = 2;
@@ -83,6 +84,9 @@ pub mod tests {
         type CreatePollOrigin = frame_system::EnsureSigned<u64>;
         type ClosePollOrigin = EnsureRoot<u64>;
         type RingAdminOrigin = frame_system::EnsureSigned<u64>;
+        type Vote = Vote;
+        type Tally = Tally;
+        type TallyHandler = TallyHandler;
         type MaxDescriptionLength = ConstU32<256>;
         type MaxMembersInRing = ConstU32<16>;
         type NumRingLayers = ConstU32<2>;
@@ -139,7 +143,7 @@ pub fn gen_ring<T: crate::pallet::Config>(
 
 pub fn gen_signature<T: crate::pallet::Config>(
     poll_id: PollId,
-    vote: VoteOption,
+    vote: Vote,
 ) -> (
     H256,
     BoundedVec<H256, T::MaxMembersInRing>,

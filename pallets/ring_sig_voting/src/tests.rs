@@ -1,4 +1,4 @@
-use crate::{mock::*, *};
+use crate::{mock::*, types::simple_voting::*, *};
 use frame::deps::sp_runtime;
 use frame::testing_prelude::*;
 
@@ -82,11 +82,11 @@ fn close_poll() {
 
 #[test]
 fn anonymous_vote() {
-    let vote = VoteOption::Yea;
+    let vote = Vote::Yea;
     let poll_id = 0;
     let description = b"Poll 0".to_vec();
     let ring_id = 0;
-    let (challenge, responses, ring, key_images) = gen_signature::<Test>(poll_id, vote);
+    let (challenge, responses, ring, key_images) = gen_signature::<Test>(poll_id, vote.clone());
 
     new_test_ext().execute_with(|| {
         System::set_block_number(1);

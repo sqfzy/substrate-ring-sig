@@ -1,13 +1,19 @@
 use super::*;
 use frame::{deps::frame_benchmarking::v2::*, prelude::*};
 
-#[benchmarks]
+#[benchmarks(
+    where
+        T: pallet::Config<
+            Vote = Vote,
+            Tally = Tally
+        >
+)]
 mod benchmarks {
     use super::*;
     use crate::pallet::Pallet as RingSigVoting;
-    use crate::mock::*;
-    use frame_system::RawOrigin;
+    use crate::{mock::*, types::simple_voting::*};
     use frame::deps::frame_support::traits::Currency;
+    use frame_system::RawOrigin;
 
     const BIG_ENOUGH: u32 = 1_000_000_000;
 
@@ -33,7 +39,8 @@ mod benchmarks {
         let balance = T::Currency::minimum_balance() * BIG_ENOUGH.into();
         T::Currency::make_free_balance_be(&caller, balance);
 
-        RingSigVoting::<T>::register_ring_group(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
+        RingSigVoting::<T>::register_ring_group(RawOrigin::Signed(caller.clone()).into(), ring)
+            .unwrap();
         assert!(RingGroups::<T>::get(ring_id).is_some());
 
         #[extrinsic_call]
@@ -60,7 +67,8 @@ mod benchmarks {
         let balance = T::Currency::minimum_balance() * BIG_ENOUGH.into();
         T::Currency::make_free_balance_be(&caller, balance);
 
-        RingSigVoting::<T>::register_ring_group(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
+        RingSigVoting::<T>::register_ring_group(RawOrigin::Signed(caller.clone()).into(), ring)
+            .unwrap();
         assert!(RingGroups::<T>::get(ring_id).is_some());
 
         RingSigVoting::<T>::create_poll(
@@ -68,7 +76,8 @@ mod benchmarks {
             description.clone().try_into().unwrap(),
             0,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let poll = Polls::<T>::get(poll_id).unwrap();
         assert_eq!(poll.description.into_inner(), description);
         assert_eq!(poll.status, PollStatus::Voting);
@@ -81,16 +90,17 @@ mod benchmarks {
     #[benchmark]
     fn anonymous_vote() {
         let caller: T::AccountId = whitelisted_caller();
-        let vote = VoteOption::Yea;
+        let vote = Vote::Yea;
         let poll_id = 0;
         let description = b"Poll 0".to_vec();
         let ring_id = 0;
-        let (challenge, responses, ring, key_images) = gen_signature::<T>(poll_id, vote);
+        let (challenge, responses, ring, key_images) = gen_signature::<T>(poll_id, vote.clone());
 
         let balance = T::Currency::minimum_balance() * BIG_ENOUGH.into();
         T::Currency::make_free_balance_be(&caller, balance);
 
-        RingSigVoting::<T>::register_ring_group(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
+        RingSigVoting::<T>::register_ring_group(RawOrigin::Signed(caller.clone()).into(), ring)
+            .unwrap();
         assert!(RingGroups::<T>::get(ring_id).is_some());
 
         RingSigVoting::<T>::create_poll(
@@ -98,7 +108,8 @@ mod benchmarks {
             description.clone().try_into().unwrap(),
             0,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let poll = Polls::<T>::get(poll_id).unwrap();
         assert_eq!(poll.description.into_inner(), description);
         assert_eq!(poll.status, PollStatus::Voting);

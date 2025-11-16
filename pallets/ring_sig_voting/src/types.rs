@@ -152,3 +152,40 @@ pub type RingMatrix<T> = BoundedVec<
     BoundedVec<CompressedRistrettoWrapper, <T as Config>::NumRingLayers>,
     <T as Config>::MaxMembersInRing,
 >;
+
+pub mod simple_voting {
+    use super::*;
+
+    // 定义投票类型
+    #[derive(
+        Encode,
+        Decode,
+        Clone,
+        PartialEq,
+        Eq,
+        RuntimeDebug,
+        TypeInfo,
+        MaxEncodedLen,
+        DecodeWithMemTracking,
+    )]
+    pub enum Vote {
+        Yea,
+        Nay,
+    }
+
+    // 定义计票存储类型
+    pub type Tally = (u32, u32);
+
+    // 定义计票逻辑
+    pub struct TallyHandler;
+
+    impl TallyLogic<Vote, Tally> for TallyHandler {
+        fn update_tally(vote: &Vote, tally: &mut Tally) -> DispatchResult {
+            match vote {
+                Vote::Yea => tally.0 += 1,
+                Vote::Nay => tally.1 += 1,
+            }
+            Ok(())
+        }
+    }
+}
