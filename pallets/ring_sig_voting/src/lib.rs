@@ -22,7 +22,7 @@ pub mod pallet {
     use super::*;
     use crate::types::BalanceOf;
     use frame::deps::frame_support::traits::{
-        Currency, EnsureOrigin, Get, QueryPreimage, ReservableCurrency, StorePreimage,
+        EnsureOrigin, Get, QueryPreimage, ReservableCurrency, StorePreimage,
     };
     use frame::prelude::*;
     use scale_info::prelude::vec::Vec;
@@ -221,10 +221,8 @@ pub mod pallet {
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         /// 注册一个可重用的公钥环
-        ///
-        /// 只有 `RingAdminOrigin` 可以调用。
         #[pallet::call_index(0)]
-        #[pallet::weight(0)] // TODO: Benchmarking (权重应与 ring.len() 相关)
+        #[pallet::weight(T::WeightInfo::register_ring_group())]
         pub fn register_ring_group(
             origin: OriginFor<T>,
             ring: BoundedVec<BoundedVec<H256, T::NumRingLayers>, T::MaxMembersInRing>,
@@ -261,7 +259,7 @@ pub mod pallet {
 
         /// 创建一个新投票
         #[pallet::call_index(1)]
-        #[pallet::weight(0)] // TODO: 重跑 benchmarking
+        #[pallet::weight(T::WeightInfo::create_poll())]
         pub fn create_poll(
             origin: OriginFor<T>,
             description: BoundedVec<u8, T::MaxDescriptionLength>,
@@ -327,7 +325,7 @@ pub mod pallet {
 
         /// 关闭一个投票
         #[pallet::call_index(2)]
-        #[pallet::weight(0)] // TODO: 重跑 benchmarking
+        #[pallet::weight(T::WeightInfo::close_poll())]
         pub fn close_poll(origin: OriginFor<T>, poll_id: PollId) -> DispatchResult {
             // 1. 权限检查
             T::ClosePollOrigin::ensure_origin(origin)?;

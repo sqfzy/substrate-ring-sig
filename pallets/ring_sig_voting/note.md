@@ -89,7 +89,7 @@ StorageMap<
 # 分清楚哪些操作是链上的，哪些是链下的
 
 # benchmarking
-1. `pallets/ring_sig/Cargo.toml`
+1. `pallets/ring_sig_voting/Cargo.toml`
 ```toml
 runtime-benchmarks = ["frame/runtime-benchmarks"]
 ```
@@ -97,12 +97,29 @@ runtime-benchmarks = ["frame/runtime-benchmarks"]
 ```rust
 polkadot_sdk::frame_benchmarking::define_benchmarks!(
     // ...
-    [ring_sig, RingSig]
+    [ring_sig_voting, RingSigVoting]
 );
 ```
-3. `touch pallets/ring_sig/src/weights.rs`
+3. `touch pallets/ring_sig_voting/src/weights.rs`
 4. `cargo build --features runtime-benchmarks --release`
-5. `frame-omni-bencher v1 benchmark pallet --runtime ./target/release/wbuild/parachain-template-runtime/parachain_template_runtime.wasm --pallet "ring_sig" --extrinsic "anonymous_vote" --template ./pallets/ring_sig/frame-weight-template.hbs --output ./pallets/ring_sig/src/weights.rs`
+5. `frame-omni-bencher v1 benchmark pallet --runtime ./target/release/wbuild/parachain-template-runtime/parachain_template_runtime.wasm --pallet "ring_sig_voting" --extrinsic "" --template ./pallets/ring_sig_voting/frame-weight-template.hbs --output ./pallets/ring_sig_voting/src/weights.rs`
+6. `weights.rs`加上：
+```rust
+use frame::deps::frame_support;
+use frame::deps::frame_system;
+```
+
+# benchmarking.rs
+对于`#[extrinsic_call]`:
+```rust
+#[extrinsic_call]
+RingSigVoting::close_poll(RawOrigin::Signed(caller), poll_id);
+```
+对于非`#[extrinsic_call]`:
+```rust
+RingSigVoting::<T>::register_ring_group(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
+```
+注意`clone()`和`into()`的使用
 
 # 复用polkadot-sdk的pallet
 1. 以`pallet-scheduler`为例，修改`runtime/Cargo.toml`

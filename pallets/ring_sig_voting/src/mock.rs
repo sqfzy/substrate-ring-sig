@@ -1,6 +1,6 @@
 use crate as ring_sig_voting;
 use crate::{PollId, RingId, VoteOption};
-use frame::{prelude::*, runtime::prelude::*, testing_prelude::*};
+use frame::{prelude::*, runtime::prelude::*};
 use polkadot_sdk::{pallet_balances, pallet_preimage};
 use scale_info::prelude::vec::Vec;
 
@@ -11,90 +11,99 @@ use nazgul::traits::{Sign, Verify};
 use rand_core::OsRng;
 use sha2::Sha512;
 
-pub const ALICE: u64 = 1;
-pub const BOB: u64 = 2;
-pub const INITIAL_BALANCE: u64 = 1_000_000_000_000_000;
+#[cfg(test)]
+pub use tests::*;
 
-type Block = frame_system::mocking::MockBlock<Test>;
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use frame::testing_prelude::*;
 
-// Configure a mock runtime to test the pallet.
-#[frame_construct_runtime]
-mod runtime {
-    #[runtime::runtime]
-    #[runtime::derive(
-        RuntimeCall,
-        RuntimeEvent,
-        RuntimeError,
-        RuntimeOrigin,
-        RuntimeFreezeReason,
-        RuntimeHoldReason,
-        RuntimeSlashReason,
-        RuntimeLockId,
-        RuntimeTask
-    )]
-    pub struct Test;
+    pub const ALICE: u64 = 1;
+    pub const BOB: u64 = 2;
+    pub const INITIAL_BALANCE: u64 = 1_000_000_000_000_000;
 
-    #[runtime::pallet_index(0)]
-    pub type System = frame_system;
+    type Block = frame_system::mocking::MockBlock<Test>;
 
-    #[runtime::pallet_index(1)]
-    pub type Balances = pallet_balances;
+    // Configure a mock runtime to test the pallet.
+    #[frame_construct_runtime]
+    mod runtime {
+        #[runtime::runtime]
+        #[runtime::derive(
+            RuntimeCall,
+            RuntimeEvent,
+            RuntimeError,
+            RuntimeOrigin,
+            RuntimeFreezeReason,
+            RuntimeHoldReason,
+            RuntimeSlashReason,
+            RuntimeLockId,
+            RuntimeTask
+        )]
+        pub struct Test;
 
-    #[runtime::pallet_index(2)]
-    pub type Preimage = pallet_preimage;
+        #[runtime::pallet_index(0)]
+        pub type System = frame_system;
 
-    #[runtime::pallet_index(3)]
-    pub type RingSigVoting = ring_sig_voting;
-}
+        #[runtime::pallet_index(1)]
+        pub type Balances = pallet_balances;
 
-// System pallet configuration
-#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
-impl frame_system::Config for Test {
-    type Block = Block;
-    type AccountData = pallet_balances::AccountData<u64>;
-}
+        #[runtime::pallet_index(2)]
+        pub type Preimage = pallet_preimage;
 
-#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig)]
-impl pallet_balances::Config for Test {
-    type AccountStore = System;
-}
+        #[runtime::pallet_index(3)]
+        pub type RingSigVoting = ring_sig_voting;
+    }
 
-impl pallet_preimage::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
-    type WeightInfo = ();
-    type Currency = Balances;
-    type ManagerOrigin = EnsureRoot<u64>;
-    type Consideration = ();
-}
+    // System pallet configuration
+    #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
+    impl frame_system::Config for Test {
+        type Block = Block;
+        type AccountData = pallet_balances::AccountData<u64>;
+    }
 
-impl ring_sig_voting::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
-    type Currency = Balances;
-    type Preimages = Preimage;
-    type SubmissionDeposit = ConstU64<100>;
-    type CreatePollOrigin = frame_system::EnsureSigned<u64>;
-    type ClosePollOrigin = EnsureRoot<u64>;
-    type RingAdminOrigin = frame_system::EnsureSigned<u64>;
-    type MaxDescriptionLength = ConstU32<256>;
-    type MaxMembersInRing = ConstU32<16>;
-    type NumRingLayers = ConstU32<2>;
-    type WeightInfo = ();
-}
+    #[derive_impl(pallet_balances::config_preludes::TestDefaultConfig)]
+    impl pallet_balances::Config for Test {
+        type AccountStore = System;
+    }
 
-// Test externalities initialization
-pub fn new_test_ext() -> TestExternalities {
-    let mut storage = frame_system::GenesisConfig::<Test>::default()
-        .build_storage()
+    impl pallet_preimage::Config for Test {
+        type RuntimeEvent = RuntimeEvent;
+        type WeightInfo = ();
+        type Currency = Balances;
+        type ManagerOrigin = EnsureRoot<u64>;
+        type Consideration = ();
+    }
+
+    impl ring_sig_voting::Config for Test {
+        type RuntimeEvent = RuntimeEvent;
+        type Currency = Balances;
+        type Preimages = Preimage;
+        type SubmissionDeposit = ConstU64<100>;
+        type CreatePollOrigin = frame_system::EnsureSigned<u64>;
+        type ClosePollOrigin = EnsureRoot<u64>;
+        type RingAdminOrigin = frame_system::EnsureSigned<u64>;
+        type MaxDescriptionLength = ConstU32<256>;
+        type MaxMembersInRing = ConstU32<16>;
+        type NumRingLayers = ConstU32<2>;
+        type WeightInfo = ();
+    }
+
+    // Test externalities initialization
+    pub fn new_test_ext() -> TestExternalities {
+        let mut storage = frame_system::GenesisConfig::<Test>::default()
+            .build_storage()
+            .unwrap();
+
+        pallet_balances::GenesisConfig::<Test> {
+            balances: vec![(ALICE, INITIAL_BALANCE), (BOB, INITIAL_BALANCE)],
+            ..Default::default()
+        }
+        .assimilate_storage(&mut storage)
         .unwrap();
 
-    pallet_balances::GenesisConfig::<Test> {
-        balances: vec![(ALICE, INITIAL_BALANCE), (BOB, INITIAL_BALANCE)],
-        ..Default::default()
+        storage.into()
     }
-    .assimilate_storage(&mut storage)
-    .unwrap();
-
-    storage.into()
 }
 
 pub fn gen_ring<T: crate::pallet::Config>(

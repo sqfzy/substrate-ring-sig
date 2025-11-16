@@ -6,7 +6,6 @@ use curve25519_dalek::{
 use frame::deps::frame_support::traits::Currency;
 use frame::prelude::*;
 use nazgul::clsag::CLSAG;
-use scale_info::prelude::vec::Vec;
 
 /// 货币余额
 pub type BalanceOf<T> =

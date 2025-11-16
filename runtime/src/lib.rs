@@ -279,8 +279,8 @@ mod runtime {
     #[runtime::pallet_index(53)]
     pub type Scheduler = pallet_scheduler;
 
-    // #[runtime::pallet_index(54)]
-    // pub type RingSigVoting = ring_sig_voting;
+    #[runtime::pallet_index(54)]
+    pub type RingSigVoting = ring_sig_voting;
 
     #[runtime::pallet_index(0)]
     pub type System = frame_system;
