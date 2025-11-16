@@ -54,6 +54,7 @@ polkadot-sdk = { workspace = true, features = [
 	"pallet-utility",
 	"pallet-preimage",
 	"pallet-scheduler",
+  "pallet-collective",
 ], default-features = false }
 scale-info = { features = ["derive"], workspace = true }
 serde_json = { workspace = true, default-features = false, features = [

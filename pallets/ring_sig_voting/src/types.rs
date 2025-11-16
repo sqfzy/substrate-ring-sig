@@ -153,6 +153,7 @@ pub type RingMatrix<T> = BoundedVec<
     <T as Config>::MaxMembersInRing,
 >;
 
+// 简单的赞成/反对投票实现
 pub mod simple_voting {
     use super::*;
 
@@ -178,12 +179,95 @@ pub mod simple_voting {
 
     // 定义计票逻辑
     pub struct TallyHandler;
-
     impl TallyLogic<Vote, Tally> for TallyHandler {
         fn update_tally(vote: &Vote, tally: &mut Tally) -> DispatchResult {
             match vote {
                 Vote::Yea => tally.0 += 1,
                 Vote::Nay => tally.1 += 1,
+            }
+            Ok(())
+        }
+    }
+}
+
+// 投票评分实现
+pub mod evaluative_voting {
+    use super::*;
+    use scale_info::prelude::{vec, vec::Vec};
+
+    const MAX_QUESTIONS: u32 = 10;
+
+    /// 评分等级
+    #[derive(
+        Encode,
+        Decode,
+        Clone,
+        PartialEq,
+        Eq,
+        RuntimeDebug,
+        TypeInfo,
+        MaxEncodedLen,
+        DecodeWithMemTracking,
+    )]
+    pub enum Score {
+        One,
+        Two,
+        Three,
+        Four,
+        Five,
+    }
+
+    pub type Vote = BoundedVec<Score, ConstU32<MAX_QUESTIONS>>;
+
+    /// 一个问题的五个评分等级的计数
+    #[derive(
+        Encode,
+        Decode,
+        Clone,
+        PartialEq,
+        Eq,
+        RuntimeDebug,
+        TypeInfo,
+        MaxEncodedLen,
+        DecodeWithMemTracking,
+        Default,
+    )]
+    pub struct QuestionStats {
+        score_1: u32,
+        score_2: u32,
+        score_3: u32,
+        score_4: u32,
+        score_5: u32,
+    }
+
+    pub type Tally = BoundedVec<QuestionStats, ConstU32<MAX_QUESTIONS>>;
+
+    pub struct TallyHandler;
+    impl TallyLogic<Vote, Tally> for TallyHandler {
+        fn update_tally(vote: &Vote, tally: &mut Tally) -> DispatchResult {
+            // 如果这是此 Poll 的第一张票，tally (BoundedVec) 是空的。
+            // 我们需要根据 vote 的长度来初始化它。
+            if tally.is_empty() {
+                let new_stats: Vec<QuestionStats> = vec![QuestionStats::default(); vote.len()];
+                
+                *tally = BoundedVec::try_from(new_stats).map_err(|_| {
+                    DispatchError::Other("Failed to initialize tally: exceeds maximum questions")
+                })?;
+            }
+
+            ensure!(vote.len() == tally.len(), "Vote and Tally dimensions mismatch");
+
+            for (i, score) in vote.iter().enumerate() {
+                let stats = &mut tally
+                    .get_mut(i)
+                    .expect("Index within bounds due to previous checks");
+                match score {
+                    Score::One => stats.score_1 += 1,
+                    Score::Two => stats.score_2 += 1,
+                    Score::Three => stats.score_3 += 1,
+                    Score::Four => stats.score_4 += 1,
+                    Score::Five => stats.score_5 += 1,
+                }
             }
             Ok(())
         }

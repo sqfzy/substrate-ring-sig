@@ -378,7 +378,7 @@ impl pallet_scheduler::Config for Runtime {
     type BlockNumberProvider = frame_system::Pallet<Runtime>;
 }
 
-use ring_sig_voting::simple_voting::{Tally, TallyHandler, Vote};
+use ring_sig_voting::evaluative_voting::{Tally, TallyHandler, Vote};
 
 impl ring_sig_voting::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
@@ -392,7 +392,7 @@ impl ring_sig_voting::Config for Runtime {
     type Tally = Tally;
     type TallyHandler = TallyHandler;
     type MaxDescriptionLength = ConstU32<256>;
-    type MaxMembersInRing = ConstU32<16>;
-    type NumRingLayers = ConstU32<2>;
+    type MaxMembersInRing = ConstU32<128>;
+    type NumRingLayers = ConstU32<1>;
     type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
 }
