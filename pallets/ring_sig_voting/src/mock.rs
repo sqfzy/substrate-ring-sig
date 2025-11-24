@@ -90,6 +90,7 @@ pub mod tests {
         type MaxDescriptionLength = ConstU32<256>;
         type MaxMembersInRing = ConstU32<16>;
         type NumRingLayers = ConstU32<2>;
+        type ClosureIncentive = ConstU64<1_000>;
         type WeightInfo = ();
     }
 

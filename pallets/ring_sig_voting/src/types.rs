@@ -145,6 +145,8 @@ pub struct Poll<T: Config> {
     pub status: PollStatus,
     /// 创建者支付的押金
     pub submission_deposit: DepositOf<T>,
+    /// 投票截止区块号
+    pub deadline: Option<BlockNumberFor<T>>,
 }
 
 /// 用于存储的合格投票者（成员）的公钥环矩阵
@@ -249,13 +251,16 @@ pub mod evaluative_voting {
             // 我们需要根据 vote 的长度来初始化它。
             if tally.is_empty() {
                 let new_stats: Vec<QuestionStats> = vec![QuestionStats::default(); vote.len()];
-                
+
                 *tally = BoundedVec::try_from(new_stats).map_err(|_| {
                     DispatchError::Other("Failed to initialize tally: exceeds maximum questions")
                 })?;
             }
 
-            ensure!(vote.len() == tally.len(), "Vote and Tally dimensions mismatch");
+            ensure!(
+                vote.len() == tally.len(),
+                "Vote and Tally dimensions mismatch"
+            );
 
             for (i, score) in vote.iter().enumerate() {
                 let stats = &mut tally

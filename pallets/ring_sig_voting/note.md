@@ -164,3 +164,17 @@ impl pallet_scheduler::Config for Runtime {
 ```
 
 # 可以在`polkadot-sdk/substrate/bin/node/runtime/src/lib.rs`中找到所有pallet的配置参考
+
+# Diagram
+1. 一轮评价的生命周期过程
+2. 教师端
+3. 学生端
+4. 
+
+# 应当满足
+1. 不能刷评：可链接性
+2. 评价不能关联到特定学生：通过环签名实现
+2. 隐藏评价内容：防止羊群效应影响后面的人进行评价，通过承诺实现
+
+
+# 使用pallet_collective作为CreatePollOrigin等type的类型，不能满足返回AccoutId。问题在于返回集合中谁的AccountId呢

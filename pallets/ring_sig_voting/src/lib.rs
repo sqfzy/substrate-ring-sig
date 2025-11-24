@@ -23,7 +23,7 @@ pub mod pallet {
     use crate::types::BalanceOf;
     use codec::{Codec, EncodeLike};
     use frame::deps::frame_support::traits::{
-        EnsureOrigin, Get, QueryPreimage, ReservableCurrency, StorePreimage,
+        Currency, EnsureOrigin, Get, QueryPreimage, ReservableCurrency, StorePreimage,
     };
     use frame::prelude::*;
     use scale_info::prelude::vec::Vec;
@@ -53,7 +53,7 @@ pub mod pallet {
         // >;
 
         /// 货币系统，用于处理押金
-        type Currency: ReservableCurrency<Self::AccountId>;
+        type Currency: ReservableCurrency<Self::AccountId> + Currency<Self::AccountId>;
 
         /// Preimage 存储，用于元数据
         type Preimages: QueryPreimage<H = Self::Hashing> + StorePreimage;
@@ -63,13 +63,13 @@ pub mod pallet {
         type SubmissionDeposit: Get<BalanceOf<Self>>;
 
         /// 谁有权创建新的投票
-        type CreatePollOrigin: pallet_collective::EnsureMember<AccountId, pallet_collective::Instance1>;;
+        type CreatePollOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
 
         /// 谁有权关闭一个投票
         type ClosePollOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
         /// 谁有权注册和管理公钥环
-        type RingAdminOrigin: pallet_collective::EnsureMember<AccountId, pallet_collective::Instance1>;;
+        type RingAdminOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
 
         /// 投票的数据结构。
         /// Runtime 可以将其定义为 Enum (赞成/反对) 或 Vec (评分)
@@ -101,6 +101,10 @@ pub mod pallet {
         #[pallet::constant]
         type NumRingLayers: Get<u32>;
 
+        // 让第一个触发关闭的用户获得一些补偿
+        #[pallet::constant]
+        type ClosureIncentive: Get<BalanceOf<Self>>;
+
         type WeightInfo: WeightInfo;
     }
 
@@ -122,6 +126,10 @@ pub mod pallet {
         PreimageNotExist,
         /// 尝试使用一个不存在的公钥环 ID
         RingGroupNotFound,
+        /// 截止日期无效（必须在未来）
+        InvalidDeadline,
+        /// 投票已过期
+        PollExpired,
     }
 
     #[pallet::event]
@@ -286,12 +294,19 @@ pub mod pallet {
             origin: OriginFor<T>,
             description: BoundedVec<u8, T::MaxDescriptionLength>,
             ring_id: RingId,
-            metadata_hash: Option<T::Hash>, // 元数据哈希
+            metadata_hash: Option<T::Hash>,
+            deadline: Option<BlockNumberFor<T>>, // 新增参数
         ) -> DispatchResult {
             // 1. 权限检查
             let creator = T::CreatePollOrigin::ensure_origin(origin)?;
 
-            // 2. 验证元数据哈希
+            // 2. 验证截止日期（如果提供）
+            if let Some(deadline_block) = deadline {
+                let current_block = <frame_system::Pallet<T>>::block_number();
+                ensure!(deadline_block > current_block, Error::<T>::InvalidDeadline);
+            }
+
+            // 3. 验证元数据哈希
             if let Some(hash) = metadata_hash {
                 ensure!(
                     T::Preimages::len(&hash).is_some(),
@@ -299,13 +314,13 @@ pub mod pallet {
                 );
             }
 
-            // 3. 检查 RingId 是否存在
+            // 4. 检查 RingId 是否存在
             ensure!(
                 <RingGroups<T>>::contains_key(ring_id),
                 Error::<T>::RingGroupNotFound
             );
 
-            // 4. 收取押金
+            // 5. 收取押金
             let deposit_amount = T::SubmissionDeposit::get();
             T::Currency::reserve(&creator, deposit_amount)?;
             let submission_deposit = Deposit {
@@ -313,18 +328,19 @@ pub mod pallet {
                 amount: deposit_amount,
             };
 
-            // 5. 获取新 ID
+            // 6. 获取新 ID
             let poll_id = <PollCount<T>>::get();
 
-            // 6. 创建投票对象
+            // 7. 创建投票对象
             let new_poll = Poll {
                 creator: creator.clone(),
                 description,
                 status: PollStatus::Voting,
                 submission_deposit,
+                deadline, // 新增字段
             };
 
-            // 7. 存储
+            // 8. 存储
             <Polls<T>>::insert(poll_id, new_poll);
             <PollVotes<T>>::insert(poll_id, T::Tally::default());
             <PollRingId<T>>::insert(poll_id, ring_id);
@@ -332,10 +348,10 @@ pub mod pallet {
                 <PollMetadata<T>>::insert(poll_id, hash);
             }
 
-            // 8. 递增 ID 计数器
+            // 9. 递增 ID 计数器
             <PollCount<T>>::put(poll_id.saturating_add(1));
 
-            // 9. 发送事件
+            // 10. 发送事件
             Self::deposit_event(Event::PollCreated {
                 poll_id,
                 ring_id,
@@ -346,37 +362,13 @@ pub mod pallet {
         }
 
         /// 关闭一个投票
+        /// - 如果投票已过期，任何已签名的账户都可以关闭
+        /// - 如果投票未过期，需要 ClosePollOrigin 权限才能关闭
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::close_poll())]
         pub fn close_poll(origin: OriginFor<T>, poll_id: PollId) -> DispatchResult {
-            // 1. 权限检查
-            T::ClosePollOrigin::ensure_origin(origin)?;
-
-            // 2. 查找投票
-            let mut poll = <Polls<T>>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
-
-            // 3. 检查状态
-            ensure!(
-                poll.status == PollStatus::Voting,
-                Error::<T>::PollAlreadyClosed
-            );
-
-            // 4. 退还押金
-            T::Currency::unreserve(&poll.creator, poll.submission_deposit.amount);
-
-            // 5. 更新状态
-            poll.status = PollStatus::Closed;
-            <Polls<T>>::insert(poll_id, poll);
-
-            // 6. 清理存储
-            <PollRingId<T>>::remove(poll_id);
-            <PollMetadata<T>>::remove(poll_id);
-            // 注意：保留 PollVotes (计票结果) 和 UsedKeyImages (防双花记录)
-
-            // 7. 发送事件
-            Self::deposit_event(Event::PollClosed { poll_id });
-
-            Ok(())
+            let poll = <Polls<T>>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
+            Self::close_poll_internal(origin, poll_id, poll)
         }
 
         /// 提交匿名投票
@@ -390,17 +382,23 @@ pub mod pallet {
             responses: BoundedVec<H256, T::MaxMembersInRing>,
             key_images: BoundedVec<H256, T::NumRingLayers>,
         ) -> DispatchResult {
-            let _who = ensure_signed(origin)?;
+            let _who = ensure_signed(origin.clone())?;
 
             // 1. 检查投票状态
             let poll = <Polls<T>>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
             ensure!(poll.status == PollStatus::Voting, Error::<T>::PollNotOpen);
 
-            // 2. 从存储中获取权威的公钥环
+            // 2. 检查是否过期，如果过期则自动关闭
+            if Self::is_poll_expired(&poll) {
+                Self::close_poll_internal(origin, poll_id, poll)?;
+                return Err(Error::<T>::PollExpired.into());
+            }
+
+            // 3. 从存储中获取权威的公钥环
             let ring_id = <PollRingId<T>>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
             let ring_matrix = <RingGroups<T>>::get(ring_id).ok_or(Error::<T>::RingGroupNotFound)?;
 
-            // 3. 验证输入长度
+            // 4. 验证输入长度
             ensure!(
                 responses.len() as u32 == ring_matrix.len() as u32,
                 Error::<T>::BadMetadata
@@ -417,14 +415,14 @@ pub mod pallet {
                 Error::<T>::BadMetadata
             );
 
-            // 4. 构建消息
+            // 5. 构建消息
             let message = {
                 let mut msg = poll_id.encode();
                 msg.extend(vote.encode());
                 msg
             };
 
-            // 5. 转换类型 (Responses, Ring, KeyImages)
+            // 6. 转换类型 (Responses, Ring, KeyImages)
             let challenge = ScalarWrapper(challenge.0);
 
             let responses: BoundedVec<ScalarWrapper, T::MaxMembersInRing> = responses
@@ -455,19 +453,19 @@ pub mod pallet {
                 key_images,
             };
 
-            // 6. 验证签名
+            // 7. 验证签名
             let signature = CLSAG::from(signature);
             let is_valid = CLSAG::verify::<Sha512>(signature, &message);
             ensure!(is_valid, Error::<T>::InvalidSignature);
 
-            // 7. 检查双重投票
+            // 8. 检查双重投票
             ensure!(
                 !<UsedKeyImages<T>>::contains_key(&poll_id, &main_key_image),
                 Error::<T>::AlreadyVoted
             );
             <UsedKeyImages<T>>::insert(&poll_id, &main_key_image, ());
 
-            // 8. 计票
+            // 9. 计票
             PollVotes::<T>::mutate(poll_id, |tally| T::TallyHandler::update_tally(&vote, tally))?;
 
             Self::deposit_event(Event::VoteTallied {
@@ -475,6 +473,57 @@ pub mod pallet {
                 vote,
                 key_image: main_key_image,
             });
+
+            Ok(())
+        }
+    }
+
+    impl<T: Config> Pallet<T> {
+        /// 检查投票是否已过期
+        fn is_poll_expired(poll: &Poll<T>) -> bool {
+            if let Some(deadline_block) = poll.deadline {
+                let current_block = <frame_system::Pallet<T>>::block_number();
+                current_block > deadline_block
+            } else {
+                false
+            }
+        }
+
+        /// - 如果投票已过期，任何已签名的账户都可以关闭
+        /// - 如果投票未过期，需要 ClosePollOrigin 权限
+        fn close_poll_internal(
+            origin: OriginFor<T>,
+            poll_id: PollId,
+            mut poll: Poll<T>,
+        ) -> DispatchResult {
+            // 1. 检查状态
+            ensure!(
+                poll.status == PollStatus::Voting,
+                Error::<T>::PollAlreadyClosed
+            );
+
+            // 2. 权限检查
+            if Self::is_poll_expired(&poll) {
+                // 过期的投票，任何已签名的账户都可以关闭
+                ensure_signed(origin)?;
+            } else {
+                // 未过期的投票，需要特殊权限
+                T::ClosePollOrigin::ensure_origin(origin)?;
+            }
+
+            // 3. 退还押金
+            T::Currency::unreserve(&poll.creator, poll.submission_deposit.amount);
+
+            // 4. 更新状态
+            poll.status = PollStatus::Closed;
+            <Polls<T>>::insert(poll_id, poll);
+
+            // 5. 清理存储
+            <PollRingId<T>>::remove(poll_id);
+            <PollMetadata<T>>::remove(poll_id);
+
+            // 6. 发送事件
+            Self::deposit_event(Event::PollClosed { poll_id });
 
             Ok(())
         }
