@@ -21,7 +21,7 @@ getrandom = { version = "0.2", default-features = false, features = ["custom"] }
 # [dev-dependencies]
 polkadot-sdk = { workspace = true, default-features = false, features = [
   "pallet-balances",
-  "pallet-preimage"
+  "pallet-preimage",
   "pallet-collective",
 ] }
 

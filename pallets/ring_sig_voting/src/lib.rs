@@ -63,13 +63,13 @@ pub mod pallet {
         type SubmissionDeposit: Get<BalanceOf<Self>>;
 
         /// 谁有权创建新的投票
-        type CreatePollOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
+        type CreatePollOrigin: pallet_collective::EnsureMember<AccountId, pallet_collective::Instance1>;;
 
         /// 谁有权关闭一个投票
         type ClosePollOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
         /// 谁有权注册和管理公钥环
-        type RingAdminOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
+        type RingAdminOrigin: pallet_collective::EnsureMember<AccountId, pallet_collective::Instance1>;;
 
         /// 投票的数据结构。
         /// Runtime 可以将其定义为 Enum (赞成/反对) 或 Vec (评分)
