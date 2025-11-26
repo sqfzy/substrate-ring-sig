@@ -174,7 +174,9 @@ impl pallet_scheduler::Config for Runtime {
 # 应当满足
 1. 不能刷评：可链接性
 2. 评价不能关联到特定学生：通过环签名实现
-2. 隐藏评价内容：防止羊群效应影响后面的人进行评价，通过承诺实现
+3. 隐藏评价内容：防止羊群效应影响后面的人进行评价
+  1. 使用承诺：学生需要vote, reveal两次操作，用户体验差
+  2. 使用tlock：自动允许解密
 
 
 # 使用pallet_collective作为CreatePollOrigin等type的类型，不能满足返回AccoutId。问题在于返回集合中谁的AccountId呢

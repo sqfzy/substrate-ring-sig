@@ -12358,6 +12358,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "primitive-types"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "721a1da530b5a2633218dc9f75713394c983c352be88d2d7c9ee85e2c4c21794"
+dependencies = [
+ "fixed-hash",
+ "impl-codec 0.7.1",
+ "scale-info",
+ "uint 0.10.0",
+]
+
+[[package]]
 name = "prioritized-metered-channel"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13039,6 +13051,7 @@ dependencies = [
  "parity-scale-codec",
  "polkadot-sdk 2503.0.1",
  "polkadot-sdk-frame",
+ "primitive-types 0.14.0",
  "rand_core 0.6.4",
  "scale-info",
  "sha2 0.10.9",

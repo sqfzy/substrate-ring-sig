@@ -17,6 +17,7 @@ sha2 = { version = "0.10.9", default-features = false }
 rand_core = { version = "0.6.4", default-features = false }
 # rand_chacha = { version = "0.9", default-features = false }
 getrandom = { version = "0.2", default-features = false, features = ["custom"] }
+primitive-types = { version = "0.14", default-features = false, features = ["codec", "scale-info"] }
 
 # [dev-dependencies]
 polkadot-sdk = { workspace = true, default-features = false, features = [

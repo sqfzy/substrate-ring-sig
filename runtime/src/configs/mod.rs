@@ -68,7 +68,6 @@ use super::{
 };
 use xcm_config::{RelayLocation, XcmOriginToTransactDispatchOrigin};
 
-use crate::sp_runtime::traits::ConstU128;
 use crate::MILLI_UNIT;
 use polkadot_sdk_frame::token::fungible::HoldConsideration;
 use polkadot_sdk_frame::traits::{EqualPrivilegeOnly, LinearStoragePrice};
@@ -414,40 +413,51 @@ impl pallet_scheduler::Config for Runtime {
 //     >;
 // }
 
-use ring_sig_voting::evaluative_voting::{Tally, TallyHandler, Vote};
+#[cfg(feature = "runtime-benchmarks")]
+use ring_sig_voting::simple_voting::{Tally, TallyHandler, Vote};
+#[cfg(not(feature = "runtime-benchmarks"))]
+use ring_sig_voting::evaluative_voting ::{Tally, TallyHandler, Vote};
+
+parameter_types! {
+	pub const SubmissionDeposit: Balance = 10;
+	pub const ClosureIncentive: Balance = 1000;
+}
 
 impl ring_sig_voting::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type Preimages = pallet_preimage::Pallet<Self>;
-    type SubmissionDeposit = ConstU128<{ 10 * MICRO_UNIT }>;
+    type SubmissionDeposit = SubmissionDeposit;
     type CreatePollOrigin = frame_system::EnsureSigned<Self::AccountId>;
     type ClosePollOrigin = EnsureRoot<u64>;
     type RingAdminOrigin = frame_system::EnsureSigned<Self::AccountId>;
-    // type CreatePollOrigin = pallet_collective::EnsureProportionMoreThan<
-    //     AccountId,
-    //     CouncilCollective,
-    //     1,
-    //     2,
-    // >;
-    // type ClosePollOrigin = pallet_collective::EnsureProportionMoreThan<
-    //     AccountId,
-    //     CouncilCollective,
-    //     1,
-    //     2,
-    // >;
-    // type RingAdminOrigin =pallet_collective::EnsureProportionMoreThan<
-    //     AccountId,
-    //     CouncilCollective,
-    //     1,
-    //     2,
-    // >;
     type Vote = Vote;
     type Tally = Tally;
     type TallyHandler = TallyHandler;
     type MaxDescriptionLength = ConstU32<256>;
     type MaxMembersInRing = ConstU32<128>;
     type NumRingLayers = ConstU32<1>;
-    type ClosureIncentive = ConstU128<1_000>;
+    type ClosureIncentive = ClosureIncentive;
+    type MaxVoteSize = ConstU32<64>;
+    type MaxVotesPerPoll = ConstU32<1000>;
     type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
 }
+
+// type CreatePollOrigin = pallet_collective::EnsureProportionMoreThan<
+//     AccountId,
+//     CouncilCollective,
+//     1,
+//     2,
+// >;
+// type ClosePollOrigin = pallet_collective::EnsureProportionMoreThan<
+//     AccountId,
+//     CouncilCollective,
+//     1,
+//     2,
+// >;
+// type RingAdminOrigin =pallet_collective::EnsureProportionMoreThan<
+//     AccountId,
+//     CouncilCollective,
+//     1,
+//     2,
+// >;

@@ -64,7 +64,15 @@ impl From<H256> for ScalarWrapper {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, Encode, Decode, TypeInfo, DecodeWithMemTracking, MaxEncodedLen,
+    CloneNoBound,
+    DebugNoBound,
+    PartialEqNoBound,
+    EqNoBound,
+    Encode,
+    Decode,
+    TypeInfo,
+    DecodeWithMemTracking,
+    MaxEncodedLen,
 )]
 #[scale_info(skip_type_params(T))]
 pub struct CLSAGWrapper<T: Config> {
@@ -76,7 +84,7 @@ pub struct CLSAGWrapper<T: Config> {
     /// signer.
     pub ring:
         BoundedVec<BoundedVec<CompressedRistrettoWrapper, T::NumRingLayers>, T::MaxMembersInRing>,
-    /// These are key images. Only the first one is linkable. If the keypair corresponding to the
+    /// These are key images.  Only the first one is linkable.  If the keypair corresponding to the
     /// first key-image is ever used everyone will know.
     pub key_images: BoundedVec<CompressedRistrettoWrapper, T::NumRingLayers>,
 }
@@ -147,6 +155,34 @@ pub struct Poll<T: Config> {
     pub submission_deposit: DepositOf<T>,
     /// 投票截止区块号
     pub deadline: Option<BlockNumberFor<T>>,
+    /// 用于投票加密的一次性公钥
+    pub encryption_public_key: Option<[u8; 32]>,
+    /// 用于揭示的私钥（仅在关闭后公开）
+    pub encryption_private_key: Option<[u8; 32]>,
+}
+
+/// 单个加密投票的结构
+#[derive(
+    CloneNoBound,
+    DebugNoBound,
+    PartialEqNoBound,
+    EqNoBound,
+    Encode,
+    Decode,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
+#[scale_info(skip_type_params(T))]
+pub struct EncryptedVote<T: Config> {
+    /// R: 临时公钥点 (用于 ECDH)
+    pub ephemeral_public_key: [u8; 32],
+    /// Cipher: 加密的投票内容
+    pub ciphertext: BoundedVec<u8, T::MaxVoteSize>,
+    /// Tag: 认证标签 (MAC)
+    pub auth_tag: [u8; 16],
+    /// 环签名数据（证明投票者身份）
+    pub ring_signature: CLSAGWrapper<T>,
 }
 
 /// 用于存储的合格投票者（成员）的公钥环矩阵
