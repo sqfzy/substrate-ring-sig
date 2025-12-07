@@ -180,3 +180,170 @@ impl pallet_scheduler::Config for Runtime {
 
 
 # 使用pallet_collective作为CreatePollOrigin等type的类型，不能满足返回AccoutId。问题在于返回集合中谁的AccountId呢
+
+# 投票的加解密都在链下，因此Vote的数据结构也在线下定义
+
+# 投票生命周期
+Active
+Tallying
+Paused
+Cancelled
+Completed
+
+# 为什么 EncryptedVote 需要 AAD
+我们让 aad = genesis_hash || poll_id || key_image
+若没有AAD，假如 Alice 想让 Bob 投赞成，那么它可以强迫 Bob 的投票密文必须与 Alice 的一样（Alice 投了赞成票）。
+有了AAD，即便明文相同，密文也会因为 aad 不同而不同。从而防止强迫。
+
+目的：**让每一个密文都变成“一次性”、“特定人”、“特定场次”的专属物品，从而杜绝任何形式的复制、重放和强迫。**
+
+# 为什么 EncryptedVote 的 nonce 可以全0
+因为 ECIES 的每个 $K_{session}$ 都是唯一的，因此即便 Nonce 是全 0，或者是一个固定的常数，$(Key, Nonce)$ 这个组合依然是全局唯一的。
+
+# 解密算法完全离线
+可以自行使用阈值加密算法。最后公布私钥时，公布合并后的私钥
+
+# 引入其它pallet
+**必须通过polkadot-sdk否则会出现版本不一致的情况，特别是在编写mock.rs时**
+```toml
+polkadot-sdk = { workspace = true, default-features = false, features = [
+  "pallet-balances",
+  "pallet-preimage",
+  "pallet-scheduler",
+] }
+```
+
+# 使用preimage pallet
+```rust
+#[pallet::config]
+pub trait Config: frame_system::Config {
+    type Preimages: QueryPreimage<H = Self::Hashing> + StorePreimage;
+}
+```
+
+```rust
+pub trait StorePreimage: QueryPreimage {
+    const MAX_LENGTH: usize;
+
+    // Required method
+    fn note(
+        bytes: Cow<'_, [u8]>,
+    ) -> Result<<Self::H as Hasher>::Out, DispatchError>;
+
+    // Provided methods
+    fn unnote(hash: &<Self::H as Hasher>::Out) { ... }
+    fn bound<T: Encode>(t: T) -> Result<Bounded<T, Self::H>, DispatchError> { ... }
+}
+
+pub trait QueryPreimage {
+    type H: Hash;
+
+    // Required methods
+    fn len(hash: &<Self::H as Hasher>::Out) -> Option<u32>;
+    fn fetch(hash: &<Self::H as Hasher>::Out, len: Option<u32>) -> FetchResult;
+    fn is_requested(hash: &<Self::H as Hasher>::Out) -> bool;
+    fn request(hash: &<Self::H as Hasher>::Out);
+    fn unrequest(hash: &<Self::H as Hasher>::Out);
+
+    // Provided methods
+    fn hold<T>(bounded: &Bounded<T, Self::H>) { ... }
+    fn drop<T>(bounded: &Bounded<T, Self::H>) { ... }
+    fn have<T>(bounded: &Bounded<T, Self::H>) -> bool { ... }
+    fn pick<T>(hash: <Self::H as Hasher>::Out, len: u32) -> Bounded<T, Self::H> { ... }
+    fn peek<T: Decode>(
+        bounded: &Bounded<T, Self::H>,
+    ) -> Result<(T, Option<u32>), DispatchError> { ... }
+    fn realize<T: Decode>(
+        bounded: &Bounded<T, Self::H>,
+    ) -> Result<(T, Option<u32>), DispatchError> { ... }
+}
+```
+
+# 使用scheduler pallet
+```rust
+use frame_support::traits::{
+	schedule::{
+		v3::{Anon as ScheduleAnon, Named as ScheduleNamed},
+	},
+};
+
+
+type Scheduler: schedule::v3::Anon<
+		BlockNumberFor<Self>,
+		RuntimeCallFor<Self>,
+		Self::RuntimeOrigin,
+		Hasher = Self::Hashing,
+	> + schedule::v3::Named<
+		BlockNumberFor<Self>,
+		RuntimeCallFor<Self>,
+		Self::RuntimeOrigin,
+		Hasher = Self::Hashing,
+	>;
+```
+
+```rust
+pub trait Anon<BlockNumber, Call, Origin> {
+    type Address: Codec + MaxEncodedLen + Clone + Eq + EncodeLike + Debug + TypeInfo;
+    type Hasher: Hash;
+
+    // Required methods
+    fn schedule(
+        when: DispatchTime<BlockNumber>,
+        maybe_periodic: Option<Period<BlockNumber>>,
+        priority: Priority,
+        origin: Origin,
+        call: Bounded<Call, Self::Hasher>,
+    ) -> Result<Self::Address, DispatchError>;
+    fn cancel(address: Self::Address) -> Result<(), DispatchError>;
+    fn reschedule(
+        address: Self::Address,
+        when: DispatchTime<BlockNumber>,
+    ) -> Result<Self::Address, DispatchError>;
+    fn next_dispatch_time(
+        address: Self::Address,
+    ) -> Result<BlockNumber, DispatchError>;
+}
+
+pub trait Named<BlockNumber, Call, Origin> {
+    type Address: Codec + MaxEncodedLen + Clone + Eq + EncodeLike + Debug;
+    type Hasher: Hash;
+
+    // Required methods
+    fn schedule_named(
+        id: TaskName,
+        when: DispatchTime<BlockNumber>,
+        maybe_periodic: Option<Period<BlockNumber>>,
+        priority: Priority,
+        origin: Origin,
+        call: Bounded<Call, Self::Hasher>,
+    ) -> Result<Self::Address, DispatchError>;
+    fn cancel_named(id: TaskName) -> Result<(), DispatchError>;
+    fn reschedule_named(
+        id: TaskName,
+        when: DispatchTime<BlockNumber>,
+    ) -> Result<Self::Address, DispatchError>;
+    fn next_dispatch_time(id: TaskName) -> Result<BlockNumber, DispatchError>;
+}
+```
+
+```rust
+let current_block = frame_system::Pallet::<T>::block_number();
+let when = DispatchTime::At(current_block + delay);
+
+// 创建要调度的调用
+let call = Call::<T>::execute_hello_world {}. into();
+let bounded_call = T::Preimages::bound(call)
+    .map_err(|_| Error::<T>::ScheduleFailed)?;
+
+// 调度任务
+let task_id = b"hello_world_task".to_vec();
+T::Scheduler::schedule_named(
+    task_id. clone(),
+    when,
+    None, // 不重复
+    127,  // 优先级
+    frame_system::RawOrigin::Root.into(),
+    bounded_call,
+)
+.map_err(|_| Error::<T>::ScheduleFailed)?;
+```

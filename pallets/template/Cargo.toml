@@ -17,6 +17,11 @@ codec = { features = ["derive"], workspace = true }
 frame = { workspace = true, features = ["experimental", "runtime"], default-features = false }
 scale-info = { features = ["derive"], workspace = true }
 
+[dev-dependencies]
+pallet-preimage = { workspace = true, default-features = true }
+pallet-scheduler = { workspace = true, default-features = true }
+pallet-balances = { workspace = true, default-features = true }
+
 [features]
 default = ["std"]
 runtime-benchmarks = ["frame/runtime-benchmarks"]

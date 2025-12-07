@@ -1,60 +1,36 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(any(test, feature = "runtime-benchmarks"))]
-mod mock;
-
-// #[cfg(test)]
-// mod tests;
-
-#[cfg(feature = "runtime-benchmarks")]
-mod benchmarking;
+pub use pallet::*;
 
 pub mod types;
-
-pub use pallet::*;
 pub use types::*;
+
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
 
 #[frame::pallet]
 pub mod pallet {
     use super::*;
     use frame::prelude::*;
-    use frame::traits::{schedule, QueryPreimage, StorePreimage};
     use scale_info::prelude::vec::Vec;
 
-    use ark_bls12_381::Bls12_381;
-    use ark_groth16::Groth16;
-    use ark_snark::SNARK;
+    use curve25519_dalek::ristretto::CompressedRistretto;
     use nazgul::blsag::BLSAG;
-    use nazgul::traits::Verify;
+    use ark_groth16::Groth16;
+    use ark_bls12_381::Bls12_381;
+    use ark_serialize::CanonicalDeserialize;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
-    // Configuration trait for the pallet.
+    /// Configuration trait
     #[pallet::config]
     pub trait Config: frame_system::Config {
-        // Defines the event type for the pallet.
+        /// The overarching event type
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
-        type RuntimeCall: Parameter
-            + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin>
-            + From<Call<Self>>
-            + IsType<<Self as frame_system::Config>::RuntimeCall>
-            + From<frame_system::Call<Self>>;
-
-        type Scheduler: schedule::v3::Anon<
-                BlockNumberFor<Self>,
-                RuntimeCallFor<Self>,
-                <<Self as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin,
-                Hasher = Self::Hashing,
-            > + schedule::v3::Named<
-                BlockNumberFor<Self>,
-                RuntimeCallFor<Self>,
-                <<Self as frame_system::Config>::RuntimeOrigin as OriginTrait>::PalletsOrigin,
-                Hasher = Self::Hashing,
-            >;
-
-		    type Preimages: QueryPreimage<H = Self::Hashing> + StorePreimage;
 
         /// Maximum description length
         #[pallet::constant]
@@ -71,10 +47,6 @@ pub mod pallet {
         /// Maximum ciphertext length
         #[pallet::constant]
         type MaxCiphertextLength: Get<u32>;
-
-        /// Maximum number of votes per poll
-        #[pallet::constant]
-        type MaxVoteNum: Get<u32>;
 
         /// Admin origin for privileged operations
         type AdminOrigin: EnsureOrigin<Self::RuntimeOrigin>;
@@ -94,24 +66,48 @@ pub mod pallet {
     /// Storage for polls
     #[pallet::storage]
     #[pallet::getter(fn polls)]
-    pub type Polls<T: Config> = StorageMap<_, Blake2_128Concat, u32, Poll<T>, OptionQuery>;
+    pub type Polls<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        u32,
+        Poll<T>,
+        OptionQuery,
+    >;
 
     /// Storage for encrypted votes (poll_id -> vote_index -> encrypted_vote)
     #[pallet::storage]
     #[pallet::getter(fn encrypted_votes)]
-    pub type EncryptedVotes<T: Config> = StorageMap<
+    pub type EncryptedVotes<T: Config> = StorageDoubleMap<
         _,
         Blake2_128Concat,
         u32,
-        BoundedVec<EncryptedVote<T::MaxCiphertextLength>, T::MaxVoteNum>,
-        ValueQuery,
+        Blake2_128Concat,
+        u32,
+        EncryptedVote<T::MaxCiphertextLength>,
+        OptionQuery,
     >;
 
     /// Storage for used key images to prevent double voting
     #[pallet::storage]
     #[pallet::getter(fn used_key_images)]
-    pub type UsedKeyImages<T: Config> =
-        StorageMap<_, Blake2_128Concat, CompressedRistrettoWrapper, (), OptionQuery>;
+    pub type UsedKeyImages<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        CompressedRistrettoWrapper,
+        (),
+        OptionQuery,
+    >;
+
+    /// Storage for tally results
+    #[pallet::storage]
+    #[pallet::getter(fn tallies)]
+    pub type Tallies<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        u32,
+        BoundedVec<u32, ConstU32<64>>,
+        OptionQuery,
+    >;
 
     /// Poll counter
     #[pallet::storage]
@@ -123,34 +119,37 @@ pub mod pallet {
     #[pallet::getter(fn ring_count)]
     pub type RingCount<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    /// Vote counter per poll
+    #[pallet::storage]
+    #[pallet::getter(fn vote_counts)]
+    pub type VoteCounts<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        u32,
+        u32,
+        ValueQuery,
+    >;
+
     /// Events
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// A ring group has been registered
-        RingRegistered { ring_id: PollId },
+        RingRegistered { ring_id: u32 },
         /// A poll has been created
-        PollCreated {
-            poll_id: PollId,
-            creator: T::AccountId,
-        },
+        PollCreated { poll_id: u32, creator: T::AccountId },
         /// A vote has been submitted
-        VoteSubmitted { poll_id: PollId, vote_index: u32 },
+        VoteSubmitted { poll_id: u32 },
         /// A poll has been tallied
-        PollCompleted { poll_id: PollId, tally: Tally },
-        /// A poll is been tallying
-        PollTallying { poll_id: PollId },
+        PollTallied { poll_id: u32, tally: BoundedVec<u32, ConstU32<64>> },
         /// A poll has been cancelled
-        PollCancelled { poll_id: PollId },
+        PollCancelled { poll_id: u32 },
         /// A poll has been paused
-        PollPaused { poll_id: PollId },
+        PollPaused { poll_id: u32 },
         /// A poll has been resumed
-        PollResumed { poll_id: PollId },
+        PollResumed { poll_id: u32 },
         /// A poll deadline has been updated
-        PollDeadlineUpdated {
-            poll_id: PollId,
-            new_deadline: BlockNumberFor<T>,
-        },
+        PollDeadlineUpdated { poll_id: u32, new_deadline: BlockNumberFor<T> },
     }
 
     /// Errors
@@ -184,8 +183,6 @@ pub mod pallet {
         CiphertextTooLarge,
         /// Overflow in counter
         Overflow,
-        /// Call is too large to be scheduled inline
-        CallTooLarge,
     }
 
     #[pallet::call]
@@ -212,7 +209,7 @@ pub mod pallet {
 
             // Get next ring ID
             let ring_id = RingCount::<T>::get();
-            let next_ring_id = ring_id.wrapping_add(1);
+            let next_ring_id = ring_id.checked_add(1).ok_or(Error::<T>::Overflow)?;
 
             // Store ring
             Rings::<T>::insert(ring_id, bounded_ring);
@@ -240,41 +237,41 @@ pub mod pallet {
         #[pallet::weight(50_000)]
         pub fn create_poll(
             origin: OriginFor<T>,
-            ring_id: RingId,
+            ring_id: u32,
             description: Vec<u8>,
-            metadata: Vec<u8>,
+            metadata_hash: H256,
             deadline: BlockNumberFor<T>,
             tally_public_key: CompressedRistrettoWrapper,
-            tally_vk: VkWrapper,
+            tally_vk: Vec<u8>,
         ) -> DispatchResult {
             // Permission check
-            T::AdminOrigin::ensure_origin(origin.clone())?;
+            T::AdminOrigin::ensure_origin(origin. clone())?;
             let creator = ensure_signed(origin)?;
 
             // Check if ring exists
             ensure!(Rings::<T>::contains_key(ring_id), Error::<T>::RingNotFound);
 
-            let bounded_description: BoundedVec<u8, T::MaxDescriptionLength> = description
-                .try_into()
-                .map_err(|_| Error::<T>::DescriptionTooLong)?;
-
-            // Get next poll ID
-            let poll_id = PollCount::<T>::get();
-            let next_poll_id = poll_id.checked_add(1).ok_or(Error::<T>::Overflow)?;
-
-            let metadata_hash = T::Preimages::note(scale_info::prelude::borrow::Cow::Borrowed(&metadata))?;
+            // Convert to bounded vecs
+            let bounded_description: BoundedVec<u8, T::MaxDescriptionLength> =
+                description.try_into().map_err(|_| Error::<T>::DescriptionTooLong)?;
+            let bounded_vk: BoundedVec<u8, T::MaxVkLength> =
+                tally_vk.try_into().map_err(|_| Error::<T>::VkTooLarge)?;
 
             // Create poll
             let poll = Poll::new(
-                creator.clone(),
-                poll_id,
+                creator. clone(),
                 ring_id,
                 bounded_description,
                 metadata_hash,
                 deadline,
                 tally_public_key,
-                tally_vk,
-            )?;
+                bounded_vk,
+            )
+            .map_err(|_| Error::<T>::InvalidDeadline)?;
+
+            // Get next poll ID
+            let poll_id = PollCount::<T>::get();
+            let next_poll_id = poll_id. checked_add(1).ok_or(Error::<T>::Overflow)?;
 
             // Store poll
             Polls::<T>::insert(poll_id, poll);
@@ -302,7 +299,7 @@ pub mod pallet {
         #[pallet::weight(100_000 + (responses.len() as u64) * 5_000)]
         pub fn vote(
             origin: OriginFor<T>,
-            poll_id: PollId,
+            poll_id: u32,
             ephemeral_public_key: CompressedRistrettoWrapper,
             ciphertext: Vec<u8>,
             challenge: ScalarWrapper,
@@ -313,26 +310,24 @@ pub mod pallet {
 
             // Get poll and ensure it's active
             let mut poll = Polls::<T>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
-            let status = poll.get_status();
+            let status = poll.get_status(poll_id);
             ensure!(status == PollStatus::Active, Error::<T>::InvalidPollStatus);
 
             // Get ring
-            let ring = Rings::<T>::get(poll.ring_id).ok_or(Error::<T>::RingNotFound)?;
+            let ring = Rings::<T>::get(poll.ring_id).ok_or(Error::<T>::RingNotFound)? ;
 
             // Convert ciphertext to bounded vec
-            let bounded_ciphertext: BoundedVec<u8, T::MaxCiphertextLength> = ciphertext
-                .clone()
-                .try_into()
-                .map_err(|_| Error::<T>::CiphertextTooLarge)?;
+            let bounded_ciphertext: BoundedVec<u8, T::MaxCiphertextLength> =
+                ciphertext.clone().try_into().map_err(|_| Error::<T>::CiphertextTooLarge)?;
 
             // Create encrypted vote
             let encrypted_vote = EncryptedVote {
-                ephemeral_public_key,
+                ephemeral_public_key: ephemeral_public_key. clone(),
                 ciphertext: bounded_ciphertext,
             };
 
-            // Message to verify
-            let message = encrypted_vote.to_bytes();
+            // Get message to verify
+            let message = encrypted_vote.get_message();
 
             // Create BLSAG signature
             let blsag_wrapper = BLSAGWrapper::<T::MaxRingSize> {
@@ -341,35 +336,28 @@ pub mod pallet {
                 ring: ring.clone(),
                 key_image: key_image.clone(),
             };
+            let blsag = blsag_wrapper.into();
 
             // Verify BLSAG signature
-            let is_valid = BLSAG::verify::<sha2::Sha512>(blsag_wrapper.into(), &message);
+            let is_valid = BLSAG::verify(blsag, &message);
             ensure!(is_valid, Error::<T>::InvalidSignature);
 
             // Check if key image has been used
             ensure!(
-                !UsedKeyImages::<T>::contains_key(&key_image),
+                ! UsedKeyImages::<T>::contains_key(&key_image),
                 Error::<T>::KeyImageAlreadyUsed
             );
 
             // Store key image
             UsedKeyImages::<T>::insert(&key_image, ());
-            // Store encrypted vote
-            let vote_index =
-                EncryptedVotes::<T>::try_mutate(poll_id, |votes| -> Result<u32, DispatchError> {
-                    // 1. 修改返回类型为 Result<usize, ...>
-                    votes
-                        .try_push(encrypted_vote)
-                        .map_err(|_| Error::<T>::Overflow)?; // 2. 这里必须加 '?' 将错误抛出
 
-                    Ok(votes.len() as u32 - 1) // 3. 现在可以正确返回 usize 了
-                })?;
+            // Store encrypted vote
+            let vote_index = VoteCounts::<T>::get(poll_id);
+            EncryptedVotes::<T>::insert(poll_id, vote_index, encrypted_vote);
+            VoteCounts::<T>::insert(poll_id, vote_index + 1);
 
             // Emit event
-            Self::deposit_event(Event::VoteSubmitted {
-                poll_id,
-                vote_index,
-            });
+            Self::deposit_event(Event::VoteSubmitted { poll_id });
 
             Ok(())
         }
@@ -387,20 +375,21 @@ pub mod pallet {
         #[pallet::weight(500_000)]
         pub fn tally(
             origin: OriginFor<T>,
-            poll_id: PollId,
-            tally: Tally,
-            proof: ProofWrapper,
+            poll_id: u32,
+            tally: Vec<u32>,
+            zk_proof: Vec<u8>,
         ) -> DispatchResult {
             // Permission check
-            T::AdminOrigin::ensure_origin(origin)?;
+            T::AdminOrigin::ensure_origin(origin)? ;
 
             // Get poll and ensure it's in tallying status
-            let mut poll = Polls::<T>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
-            let status = poll.get_status();
-            ensure!(
-                status == PollStatus::Tallying,
-                Error::<T>::InvalidPollStatus
-            );
+            let mut poll = Polls::<T>::get(poll_id).ok_or(Error::<T>::PollNotFound)? ;
+            let status = poll. get_status(poll_id);
+            ensure!(status == PollStatus::Tallying, Error::<T>::InvalidPollStatus);
+
+            // Convert tally to bounded vec
+            let bounded_tally: BoundedVec<u32, ConstU32<64>> =
+                tally.clone().try_into().map_err(|_| Error::<T>::InvalidProof)?;
 
             // Compute encrypted votes hash
             let encrypted_votes_hash = Self::compute_encrypted_votes_hash(poll_id);
@@ -409,28 +398,26 @@ pub mod pallet {
             let public_inputs = PublicInputs {
                 poll_id,
                 encrypted_votes_hash,
-                tally: tally.clone(),
+                tally: bounded_tally.clone(),
             };
 
             // Verify zero-knowledge proof
-            let vk = ark_groth16::VerifyingKey::<Bls12_381>::from(poll.tally_vk.clone());
-            let Ok(vk) = Groth16::<Bls12_381>::process_vk(&vk) else {
-                unreachable!()
-            };
-            let proof = ark_groth16::Proof::<Bls12_381>::from(proof);
-            let public_inputs: Vec<ark_bls12_381::Fr> = public_inputs.into();
-            let is_valid =
-                Groth16::<Bls12_381>::verify_with_processed_vk(&vk, &public_inputs, &proof)
-                    .unwrap_or(false);
-            ensure!(is_valid, Error::<T>::InvalidProof);
+            let vk_wrapper = VkWrapper(poll.tally_vk);
+            let vk = ark_groth16::VerifyingKey::<Bls12_381>::try_from(vk_wrapper)
+                .map_err(|_| Error::<T>::InvalidProof)?;
+
+            Self::verify_groth16_proof(&poll.tally_vk, &public_inputs, &zk_proof)?;
 
             // Update poll status
-            poll.set_status(PollStatus::Completed)?;
-            poll.tally = Some(tally.clone());
+            poll.set_status(PollStatus::Completed)
+                .map_err(|_| Error::<T>::InvalidStatusTransition)?;
             Polls::<T>::insert(poll_id, poll);
 
+            // Store tally
+            Tallies::<T>::insert(poll_id, bounded_tally. clone());
+
             // Emit event
-            Self::deposit_event(Event::PollCompleted { poll_id, tally });
+            Self::deposit_event(Event::PollTallied { poll_id, tally: bounded_tally });
 
             Ok(())
         }
@@ -446,16 +433,18 @@ pub mod pallet {
         #[pallet::weight(10_000)]
         pub fn tally_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
             // Permission check
-            T::AdminOrigin::ensure_origin(origin)?;
+            T::AdminOrigin::ensure_origin(origin)? ;
 
-            Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
-                let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
-                poll.set_status(PollStatus::Tallying)?;
-                Ok(())
-            })?;
+            // Get poll
+            let mut poll = Polls::<T>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
+
+            // Set status to cancelled
+            poll.set_status(PollStatus::Tallying)
+                .map_err(|_| Error::<T>::InvalidStatusTransition)?;
+            Polls::<T>::insert(poll_id, poll);
 
             // Emit event
-            Self::deposit_event(Event::PollTallying { poll_id });
+            Self::deposit_event(Event::PollCancelled { poll_id });
 
             Ok(())
         }
@@ -471,13 +460,15 @@ pub mod pallet {
         #[pallet::weight(10_000)]
         pub fn cancel_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
             // Permission check
-            T::AdminOrigin::ensure_origin(origin)?;
+            T::AdminOrigin::ensure_origin(origin)? ;
 
-            Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
-                let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
-                poll.set_status(PollStatus::Cancelled)?;
-                Ok(())
-            })?;
+            // Get poll
+            let mut poll = Polls::<T>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
+
+            // Set status to cancelled
+            poll.set_status(PollStatus::Cancelled)
+                .map_err(|_| Error::<T>::InvalidStatusTransition)?;
+            Polls::<T>::insert(poll_id, poll);
 
             // Emit event
             Self::deposit_event(Event::PollCancelled { poll_id });
@@ -498,14 +489,51 @@ pub mod pallet {
             // Permission check
             T::AdminOrigin::ensure_origin(origin)?;
 
-            Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
-                let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
-                poll.set_status(PollStatus::Paused)?;
-                Ok(())
-            })?;
+            // Get poll
+            let mut poll = Polls::<T>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
+
+            // Set status to paused
+            poll.set_status(PollStatus::Paused)
+                .map_err(|_| Error::<T>::InvalidStatusTransition)?;
+            Polls::<T>::insert(poll_id, poll);
 
             // Emit event
             Self::deposit_event(Event::PollPaused { poll_id });
+
+            Ok(())
+        }
+
+        /// Resume a poll
+        ///
+        /// # Arguments
+        /// * `origin` - Must be admin
+        /// * `poll_id` - ID of the poll to resume
+        ///
+        /// # Weight: O(1)
+        #[pallet::call_index(7)]
+        #[pallet::weight(10_000)]
+        pub fn resume_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
+            // Permission check
+            T::AdminOrigin::ensure_origin(origin)? ;
+
+            // Get poll
+            let mut poll = Polls::<T>::get(poll_id). ok_or(Error::<T>::PollNotFound)?;
+
+            // Determine which status to resume to
+            let now = frame_system::Pallet::<T>::block_number();
+            let new_status = if now <= poll.deadline {
+                PollStatus::Active
+            } else {
+                PollStatus::Tallying
+            };
+
+            // Set status
+            poll.set_status(new_status)
+                .map_err(|_| Error::<T>::InvalidStatusTransition)?;
+            Polls::<T>::insert(poll_id, poll);
+
+            // Emit event
+            Self::deposit_event(Event::PollResumed { poll_id });
 
             Ok(())
         }
@@ -518,7 +546,7 @@ pub mod pallet {
         /// * `new_deadline` - New deadline block number
         ///
         /// # Weight: O(1)
-        #[pallet::call_index(7)]
+        #[pallet::call_index(8)]
         #[pallet::weight(10_000)]
         pub fn set_deadline(
             origin: OriginFor<T>,
@@ -528,35 +556,69 @@ pub mod pallet {
             // Permission check
             T::AdminOrigin::ensure_origin(origin)?;
 
+            // Get poll
+            let mut poll = Polls::<T>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
+
             // Set deadline
-            Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
-                let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
-                poll.set_deadline(new_deadline)?;
-                Ok(())
-            })?;
+            poll.set_deadline(new_deadline)
+                . map_err(|_| Error::<T>::InvalidDeadline)?;
+            Polls::<T>::insert(poll_id, poll);
 
             // Emit event
-            Self::deposit_event(Event::PollDeadlineUpdated {
-                poll_id,
-                new_deadline,
-            });
+            Self::deposit_event(Event::PollDeadlineUpdated { poll_id, new_deadline });
 
             Ok(())
         }
     }
 
     impl<T: Config> Pallet<T> {
+        /// Update poll status in storage (called from Poll::get_status)
+        pub fn update_poll_status(poll_id: u32, poll: Poll<T>) {
+            Polls::<T>::insert(poll_id, poll);
+        }
+
         /// Compute hash of all encrypted votes for a poll
         fn compute_encrypted_votes_hash(poll_id: u32) -> H256 {
-            let votes = EncryptedVotes::<T>::get(poll_id);
+            let mut all_votes = Vec::new();
+            let vote_count = VoteCounts::<T>::get(poll_id);
 
-            let mut all_votes_bytes = Vec::new();
-            for vote in votes {
-                all_votes_bytes.extend(vote.to_bytes());
+            for i in 0..vote_count {
+                if let Some(vote) = EncryptedVotes::<T>::get(poll_id, i) {
+                    all_votes.extend_from_slice(&vote.ephemeral_public_key. 0);
+                    all_votes.extend_from_slice(&vote.ciphertext);
+                }
             }
 
-            let hash = T::Hashing::hash(&all_votes_bytes);
-            H256::from_slice(hash.as_ref())
+            T::Hashing::hash(&all_votes)
+        }
+
+        /// Verify Groth16 proof
+        fn verify_groth16_proof(
+            vk_bytes: &BoundedVec<u8, T::MaxVkLength>,
+            public_inputs: &PublicInputs,
+            proof_bytes: &[u8],
+        ) -> DispatchResult {
+            // Deserialize verification key
+            let vk = ark_groth16::VerifyingKey::<Bls12_381>::deserialize_compressed(&vk_bytes[..])
+                .map_err(|_| Error::<T>::InvalidProof)?;
+
+            // Deserialize proof
+            let proof = ark_groth16::Proof::<Bls12_381>::deserialize_compressed(proof_bytes)
+                .map_err(|_| Error::<T>::InvalidProof)?;
+
+            // Convert public inputs to field elements
+            let public_input_fields = public_inputs.to_field_elements();
+
+            // Verify proof
+            use ark_groth16::Groth16;
+            use ark_snark::SNARK;
+            
+            let is_valid = Groth16::<Bls12_381>::verify(&vk, &public_input_fields, &proof)
+                .map_err(|_| Error::<T>::InvalidProof)?;
+
+            ensure!(is_valid, Error::<T>::InvalidProof);
+
+            Ok(())
         }
     }
 }

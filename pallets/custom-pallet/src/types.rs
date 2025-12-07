@@ -1,23 +1,19 @@
-use ark_bls12_381::{Bls12_381, Fr};
-use ark_ff::Field;
-use ark_groth16::{Proof, VerifyingKey};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use codec::{Decode, DecodeWithMemTracking, Encode, EncodeLike, MaxEncodedLen};
+use codec::{Decode, Encode, MaxEncodedLen};
+use frame::prelude::*;
+use scale_info::prelude::vec::Vec;
 use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
     scalar::Scalar,
 };
-use frame::prelude::*;
-use frame::traits::schedule::{
-    v3::{Named, TaskName},
-    DispatchTime,
-};
 use nazgul::blsag::BLSAG;
-use scale_info::prelude::vec::Vec;
+use ark_bls12_381::{Bls12_381, Fr};
+use ark_groth16::{Proof, VerifyingKey};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_ff::{PrimeField, Field};
 
-pub type PollId = u32;
-pub type RingId = u32;
-pub type Tally = u32;
+pub type PollId = u64;
+pub type RingId = u64;
+pub type Tally = u64;
 
 /// Wrapper for CompressedRistretto to make it compatible with Substrate storage
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,11 +25,9 @@ impl Encode for CompressedRistrettoWrapper {
     }
 
     fn encode_to<T: codec::Output + ?Sized>(&self, dest: &mut T) {
-        dest.write(&self.0.to_bytes());
+        dest.write(&self.0. to_bytes());
     }
 }
-
-impl EncodeLike for CompressedRistrettoWrapper {}
 
 impl Decode for CompressedRistrettoWrapper {
     fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
@@ -42,8 +36,6 @@ impl Decode for CompressedRistrettoWrapper {
         Ok(Self(CompressedRistretto(bytes)))
     }
 }
-
-impl DecodeWithMemTracking for CompressedRistrettoWrapper {}
 
 impl MaxEncodedLen for CompressedRistrettoWrapper {
     fn max_encoded_len() -> usize {
@@ -56,13 +48,10 @@ impl scale_info::TypeInfo for CompressedRistrettoWrapper {
 
     fn type_info() -> scale_info::Type {
         scale_info::Type::builder()
-            .path(scale_info::Path::new(
-                "CompressedRistrettoWrapper",
-                module_path!(),
-            ))
+            .path(scale_info::Path::new("CompressedRistrettoWrapper", module_path!()))
             .composite(
                 scale_info::build::Fields::unnamed()
-                    .field(|f| f.ty::<[u8; 32]>().type_name("CompressedRistretto")),
+                    .field(|f| f.ty::<[u8; 32]>(). type_name("CompressedRistretto"))
             )
     }
 }
@@ -81,8 +70,7 @@ impl From<RistrettoPoint> for CompressedRistrettoWrapper {
 
 impl From<CompressedRistrettoWrapper> for RistrettoPoint {
     fn from(wrapper: CompressedRistrettoWrapper) -> Self {
-        wrapper
-            .0
+        wrapper.0
             .decompress()
             .expect("Invalid compressed ristretto point")
     }
@@ -110,7 +98,7 @@ impl core::ops::Deref for CompressedRistrettoWrapper {
     type Target = CompressedRistretto;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self. 0
     }
 }
 
@@ -123,25 +111,20 @@ impl Encode for ScalarWrapper {
         32
     }
 
-    fn encode_to<T: codec::Output + ?Sized>(&self, dest: &mut T) {
+    fn encode_to<T: codec::Output + ? Sized>(&self, dest: &mut T) {
         dest.write(&self.0.to_bytes());
     }
 }
-
-impl EncodeLike for ScalarWrapper {}
 
 impl Decode for ScalarWrapper {
     fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
         let mut bytes = [0u8; 32];
         input.read(&mut bytes)?;
         let scalar = Scalar::from_canonical_bytes(bytes)
-            .into_option()
-            .ok_or("Invalid scalar encoding: not canonical")?;
+            .into_option().ok_or("Invalid scalar encoding: not canonical")?;
         Ok(Self(scalar))
     }
 }
-
-impl DecodeWithMemTracking for ScalarWrapper {}
 
 impl MaxEncodedLen for ScalarWrapper {
     fn max_encoded_len() -> usize {
@@ -157,7 +140,7 @@ impl scale_info::TypeInfo for ScalarWrapper {
             .path(scale_info::Path::new("ScalarWrapper", module_path!()))
             .composite(
                 scale_info::build::Fields::unnamed()
-                    .field(|f| f.ty::<[u8; 32]>().type_name("Scalar")),
+                    .field(|f| f.ty::<[u8; 32]>().type_name("Scalar"))
             )
     }
 }
@@ -208,16 +191,25 @@ impl<MaxRingSize: Get<u32>> TryFrom<BLSAG> for BLSAGWrapper<MaxRingSize> {
     type Error = &'static str;
 
     fn try_from(blsag: BLSAG) -> Result<Self, Self::Error> {
-        let challenge = blsag.challenge.into();
-        let responses: Vec<ScalarWrapper> = blsag.responses.into_iter().map(Into::into).collect();
-        let ring_wrapped: Vec<CompressedRistrettoWrapper> =
-            blsag.ring.into_iter().map(Into::into).collect();
-        let key_image = blsag.key_image.into();
+        let challenge = blsag.challenge. into();
+        let responses: Vec<ScalarWrapper> = blsag
+            .responses
+            . into_iter()
+            .map(Into::into)
+            .collect();
+        let ring_wrapped: Vec<CompressedRistrettoWrapper> = blsag
+            .ring
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        let key_image = blsag.key_image. into();
 
         Ok(Self {
             challenge,
-            responses: BoundedVec::try_from(responses).map_err(|_| "Too many responses")?,
-            ring: BoundedVec::try_from(ring_wrapped).map_err(|_| "Ring too large")?,
+            responses: BoundedVec::try_from(responses)
+                .map_err(|_| "Too many responses")?,
+            ring: BoundedVec::try_from(ring_wrapped)
+                .map_err(|_| "Ring too large")?,
             key_image,
         })
     }
@@ -226,8 +218,16 @@ impl<MaxRingSize: Get<u32>> TryFrom<BLSAG> for BLSAGWrapper<MaxRingSize> {
 impl<MaxRingSize: Get<u32>> From<BLSAGWrapper<MaxRingSize>> for BLSAG {
     fn from(wrapper: BLSAGWrapper<MaxRingSize>) -> Self {
         let challenge = wrapper.challenge.into();
-        let responses: Vec<Scalar> = wrapper.responses.into_iter().map(Into::into).collect();
-        let ring = wrapper.ring.into_iter().map(Into::into).collect();
+        let responses: Vec<Scalar> = wrapper
+            .responses
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        let ring = wrapper
+            .ring
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect();
         let key_image = wrapper.key_image.into();
 
         BLSAG {
@@ -256,19 +256,32 @@ pub enum PollStatus {
 
 /// Poll structure
 #[derive(
-    CloneNoBound, DebugNoBound, PartialEqNoBound, EqNoBound, Encode, Decode, TypeInfo, MaxEncodedLen,
+    CloneNoBound,
+    DebugNoBound,
+    PartialEqNoBound,
+    EqNoBound, 
+    Encode, 
+    Decode, 
+    TypeInfo, 
+    MaxEncodedLen
 )]
 #[scale_info(skip_type_params(T))]
 pub struct Poll<T: crate::Config> {
+    /// Creator of the poll
     pub creator: T::AccountId,
-    pub poll_id: PollId,
-    pub ring_id: RingId,
+    /// Ring signature group ID
+    pub ring_id: u32,
+    /// Description
     pub description: BoundedVec<u8, T::MaxDescriptionLength>,
-    pub metadata_hash: <T::Hashing as Hash>::Output,
+    /// Metadata hash
+    pub metadata_hash: H256,
+    /// Deadline
     pub deadline: BlockNumberFor<T>,
+    /// Tally public key
     pub tally_public_key: CompressedRistrettoWrapper,
-    pub tally_vk: VkWrapper,
-    pub tally: Option<Tally>,
+    /// Tally verification key (Groth16)
+    pub tally_vk: BoundedVec<u8, T::MaxVkLength>,
+    /// Poll status
     pub status: PollStatus,
 }
 
@@ -276,141 +289,91 @@ impl<T: crate::Config> Poll<T> {
     /// Create a new poll
     pub fn new(
         creator: T::AccountId,
-        poll_id: PollId,
-        ring_id: RingId,
+        ring_id: u32,
         description: BoundedVec<u8, T::MaxDescriptionLength>,
-        metadata_hash: <T::Hashing as Hash>::Output,
+        metadata_hash: H256,
         deadline: BlockNumberFor<T>,
         tally_public_key: CompressedRistrettoWrapper,
-        tally_vk: VkWrapper,
-    ) -> Result<Self, DispatchError> {
+        tally_vk: BoundedVec<u8, T::MaxVkLength>,
+    ) -> Result<Self, &'static str> {
         // Check if deadline is valid
         let now = frame_system::Pallet::<T>::block_number();
         if deadline <= now {
-            return Err(crate::Error::<T>::InvalidDeadline.into());
+            return Err("Invalid deadline: must be in the future");
         }
-
-        schedule_deadline_task::<T>(poll_id, deadline)?;
 
         Ok(Self {
             creator,
-            poll_id,
             ring_id,
             description,
             metadata_hash,
             deadline,
             tally_public_key,
             tally_vk,
-            tally: None,
             status: PollStatus::Active,
         })
     }
 
     /// Get poll status with automatic state transition
-    pub fn get_status(&mut self) -> PollStatus {
+    pub fn get_status(&mut self, poll_id: u32) -> PollStatus {
+        if self.status == PollStatus::Active {
+            let now = frame_system::Pallet::<T>::block_number();
+            if now > self.deadline {
+                self.status = PollStatus::Tallying;
+                // Update storage
+                crate::Pallet::<T>::update_poll_status(poll_id, self.clone());
+            }
+        }
         self.status
     }
 
-    pub fn set_status(&mut self, new_status: PollStatus) -> DispatchResult {
+    /// Set poll status with validation
+    pub fn set_status(&mut self, new_status: PollStatus) -> Result<(), &'static str> {
+        // Check if deadline has passed for Active status
         let now = frame_system::Pallet::<T>::block_number();
-        let old_status = self.status;
-
-        // 验证状态转换
         if new_status == PollStatus::Active && now > self.deadline {
-            return Err(crate::Error::<T>::InvalidDeadline.into());
+            return Err("Cannot set to Active: deadline has passed");
         }
 
-        let valid_transition = match (&old_status, &new_status) {
-            (PollStatus::Active, PollStatus::Tallying)
-            | (PollStatus::Active, PollStatus::Paused)
-            | (PollStatus::Active, PollStatus::Cancelled)
-            | (PollStatus::Tallying, PollStatus::Completed)
-            | (PollStatus::Tallying, PollStatus::Paused)
-            | (PollStatus::Paused, PollStatus::Active)
-            | (PollStatus::Paused, PollStatus::Tallying)
+        // Validate state transition
+        let valid_transition = match (&self.status, &new_status) {
+            (PollStatus::Active, PollStatus::Tallying) 
+            | (PollStatus::Active, PollStatus::Paused) 
+            | (PollStatus::Active, PollStatus::Cancelled) 
+            | (PollStatus::Tallying, PollStatus::Completed) 
+            | (PollStatus::Tallying, PollStatus::Paused) 
+            | (PollStatus::Paused, PollStatus::Active) 
+            | (PollStatus::Paused, PollStatus::Tallying) 
             | (PollStatus::Paused, PollStatus::Cancelled) => true,
             _ => false,
         };
 
         if !valid_transition {
-            return Err(crate::Error::<T>::InvalidStatusTransition.into());
+            return Err("Invalid status transition");
         }
 
         self.status = new_status;
-
-        // 如果设置为 Active，尝试调度 deadline 任务
-        if new_status == PollStatus::Active {
-            schedule_deadline_task::<T>(self.poll_id, self.deadline)?;
-        }
-
-        // 如果从 Active 切换到其他状态，取消任务
-        if old_status == PollStatus::Active && new_status != PollStatus::Active {
-            cancel_deadline_task::<T>(self.poll_id).ok();
-        }
-
         Ok(())
     }
 
     /// Set deadline
-    pub fn set_deadline(&mut self, deadline: BlockNumberFor<T>) -> DispatchResult {
+    pub fn set_deadline(&mut self, deadline: BlockNumberFor<T>) -> Result<(), &'static str> {
         if self.status != PollStatus::Active {
-            return Err(crate::Error::<T>::InvalidPollStatus.into());
+            return Err("Can only set deadline for Active polls");
         }
 
         let now = frame_system::Pallet::<T>::block_number();
         if deadline <= now {
-            return Err(crate::Error::<T>::InvalidDeadline.into());
+            return Err("Deadline must be in the future");
         }
 
         self.deadline = deadline;
-        schedule_deadline_task::<T>(self.poll_id, deadline)?;
         Ok(())
     }
 }
 
-fn schedule_deadline_task<T: crate::Config>(
-    poll_id: PollId,
-    deadline: BlockNumberFor<T>,
-) -> DispatchResult {
-    let task_name = task_name(poll_id);
-
-    // 先尝试取消可能存在的旧任务
-    T::Scheduler::cancel_named(task_name).ok();
-
-    // 构造调用
-    let call: <T as crate::Config>::RuntimeCall = crate::Call::<T>::tally_poll { poll_id }.into();
-    let bounded_call = BoundedVec::try_from(call.encode()).expect("Call must be at most 128 bytes");
-
-    // 调度任务
-    T::Scheduler::schedule_named(
-        task_name,
-        DispatchTime::At(deadline),
-        None, // no periodic execution
-        0,    // priority
-        frame_system::RawOrigin::Root.into(),
-        frame::deps::frame_support::traits::Bounded::Inline(bounded_call),
-    )?;
-
-    Ok(())
-}
-
-fn cancel_deadline_task<T: crate::Config>(poll_id: PollId) -> DispatchResult {
-    let task_name = task_name(poll_id);
-    T::Scheduler::cancel_named(task_name)
-}
-
-/// b"poll_deadline_{poll_id}"
-fn task_name(poll_id: u32) -> TaskName {
-    let mut name = [
-        b'p', b'o', b'l', b'l', b'_', b'd', b'e', b'a', b'd', b'l', b'i', b'n', b'e', b'_', 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    ];
-    name[14..18].copy_from_slice(&poll_id.to_be_bytes());
-    TaskName::from(name)
-}
-
 /// Wrapper for Groth16 proof
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct ProofWrapper(pub Proof<Bls12_381>);
 
 impl Encode for ProofWrapper {
@@ -419,16 +382,14 @@ impl Encode for ProofWrapper {
         200
     }
 
-    fn encode_to<T: codec::Output + ?Sized>(&self, dest: &mut T) {
-        let mut bytes = Vec::with_capacity(self.size_hint());
+    fn encode(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
         self.0
             .serialize_compressed(&mut bytes)
             .expect("Proof serialization should not fail");
-        bytes.encode_to(dest);
+        bytes. encode()
     }
 }
-
-impl EncodeLike for ProofWrapper {}
 
 impl Decode for ProofWrapper {
     fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
@@ -439,12 +400,10 @@ impl Decode for ProofWrapper {
     }
 }
 
-impl DecodeWithMemTracking for ProofWrapper {}
-
 impl MaxEncodedLen for ProofWrapper {
     fn max_encoded_len() -> usize {
         // Vec compact length + actual proof size
-        codec::Compact(256u32).encoded_size() + 256
+        codec::Compact(256u32). encoded_size() + 256
     }
 }
 
@@ -456,7 +415,7 @@ impl scale_info::TypeInfo for ProofWrapper {
             .path(scale_info::Path::new("ProofWrapper", module_path!()))
             .composite(
                 scale_info::build::Fields::unnamed()
-                    .field(|f| f.ty::<Vec<u8>>().type_name("Proof<Bls12_381>")),
+                    .field(|f| f.ty::<Vec<u8>>().type_name("Proof<Bls12_381>"))
             )
     }
 }
@@ -488,7 +447,7 @@ impl core::ops::Deref for ProofWrapper {
 }
 
 /// Wrapper for Groth16 verifying key
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct VkWrapper(pub VerifyingKey<Bls12_381>);
 
 impl Encode for VkWrapper {
@@ -497,27 +456,23 @@ impl Encode for VkWrapper {
         1024
     }
 
-    fn encode_to<T: codec::Output + ?Sized>(&self, dest: &mut T) {
+    fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         self.0
             .serialize_compressed(&mut bytes)
             .expect("VK serialization should not fail");
-        bytes.encode_to(dest);
+        bytes.encode()
     }
 }
-
-impl EncodeLike for VkWrapper {}
 
 impl Decode for VkWrapper {
     fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
         let bytes: Vec<u8> = Vec::decode(input)?;
-        let vk = VerifyingKey::<Bls12_381>::deserialize_compressed(&bytes[..])
+        let vk = VerifyingKey::<Bls12_381>::deserialize_compressed(&bytes[.. ])
             .map_err(|_| codec::Error::from("Failed to deserialize verification key"))?;
         Ok(Self(vk))
     }
 }
-
-impl DecodeWithMemTracking for VkWrapper {}
 
 impl MaxEncodedLen for VkWrapper {
     fn max_encoded_len() -> usize {
@@ -531,10 +486,10 @@ impl scale_info::TypeInfo for VkWrapper {
 
     fn type_info() -> scale_info::Type {
         scale_info::Type::builder()
-            .path(scale_info::Path::new("VkWrapper", module_path!()))
+            . path(scale_info::Path::new("VkWrapper", module_path!()))
             .composite(
                 scale_info::build::Fields::unnamed()
-                    .field(|f| f.ty::<Vec<u8>>().type_name("VerifyingKey<Bls12_381>")),
+                    . field(|f| f.ty::<Vec<u8>>(). type_name("VerifyingKey<Bls12_381>"))
             )
     }
 }
@@ -572,16 +527,16 @@ pub struct PublicInputs {
     /// Hash of all encrypted votes (commitment)
     pub encrypted_votes_hash: H256,
     /// Tally result
-    pub tally: Tally,
+    pub tally: BoundedVec<u32, ConstU32<64>>,
 }
 
 impl From<PublicInputs> for Vec<Fr> {
     fn from(inputs: PublicInputs) -> Vec<Fr> {
         let mut elements = Vec::new();
-
+        
         // Add poll_id
-        elements.push(Fr::from(inputs.poll_id));
-
+        elements.push(Fr::from(inputs.poll_id as u64));
+        
         // Add encrypted_votes_hash (split into field elements)
         let hash_bytes = inputs.encrypted_votes_hash.0;
         for chunk in hash_bytes.chunks(31) {
@@ -591,9 +546,12 @@ impl From<PublicInputs> for Vec<Fr> {
                 elements.push(fe);
             }
         }
-
-        elements.push(Fr::from(inputs.tally));
-
+        
+        // Add tally results
+        for count in inputs.tally.into_iter() {
+            elements.push(Fr::from(count as u64));
+        }
+        
         elements
     }
 }
@@ -607,8 +565,9 @@ pub struct EncryptedVote<MaxCiphertextLength: Get<u32>> {
 }
 
 impl<MaxCiphertextLength: Get<u32>> EncryptedVote<MaxCiphertextLength> {
+    /// Get the message to be signed (ephemeral_public_key || ciphertext)
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(32 + self.ciphertext.len());
+        let mut bytes = Vec::with_capacity(32 + self.ciphertext. len());
         bytes.extend_from_slice(&self.ephemeral_public_key.to_bytes());
         bytes.extend_from_slice(&self.ciphertext);
         bytes

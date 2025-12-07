@@ -413,35 +413,34 @@ impl pallet_scheduler::Config for Runtime {
 //     >;
 // }
 
-#[cfg(feature = "runtime-benchmarks")]
-use ring_sig_voting::simple_voting::{Tally, TallyHandler, Vote};
-#[cfg(not(feature = "runtime-benchmarks"))]
-use ring_sig_voting::evaluative_voting ::{Tally, TallyHandler, Vote};
-
-parameter_types! {
-	pub const SubmissionDeposit: Balance = 10;
-	pub const ClosureIncentive: Balance = 1000;
-}
-
-impl ring_sig_voting::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
-    type Currency = Balances;
-    type Preimages = pallet_preimage::Pallet<Self>;
-    type SubmissionDeposit = SubmissionDeposit;
-    type CreatePollOrigin = frame_system::EnsureSigned<Self::AccountId>;
-    type ClosePollOrigin = EnsureRoot<u64>;
-    type RingAdminOrigin = frame_system::EnsureSigned<Self::AccountId>;
-    type Vote = Vote;
-    type Tally = Tally;
-    type TallyHandler = TallyHandler;
-    type MaxDescriptionLength = ConstU32<256>;
-    type MaxMembersInRing = ConstU32<128>;
-    type NumRingLayers = ConstU32<1>;
-    type ClosureIncentive = ClosureIncentive;
-    type MaxVoteSize = ConstU32<64>;
-    type MaxVotesPerPoll = ConstU32<1000>;
-    type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
-}
+// #[cfg(feature = "runtime-benchmarks")]
+// use ring_sig_voting::simple_voting::{Tally, Vote};
+// #[cfg(not(feature = "runtime-benchmarks"))]
+// use ring_sig_voting::evaluative_voting ::{Tally, Vote};
+//
+// parameter_types! {
+// 	pub const SubmissionDeposit: Balance = 10;
+// 	pub const ClosureIncentive: Balance = 1000;
+// }
+//
+// impl ring_sig_voting::Config for Runtime {
+//     type RuntimeEvent = RuntimeEvent;
+//     type Currency = Balances;
+//     type Preimages = pallet_preimage::Pallet<Self>;
+//     type SubmissionDeposit = SubmissionDeposit;
+//     type CreatePollOrigin = frame_system::EnsureSigned<Self::AccountId>;
+//     type ClosePollOrigin = EnsureRoot<u64>;
+//     type RingAdminOrigin = frame_system::EnsureSigned<Self::AccountId>;
+//     type Vote = Vote;
+//     type Tally = Tally;
+//     type MaxDescriptionLength = ConstU32<256>;
+//     type MaxMembersInRing = ConstU32<128>;
+//     type NumRingLayers = ConstU32<1>;
+//     type ClosureIncentive = ClosureIncentive;
+//     type MaxVoteSize = ConstU32<64>;
+//     type MaxVotesPerPoll = ConstU32<1000>;
+//     type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
+// }
 
 // type CreatePollOrigin = pallet_collective::EnsureProportionMoreThan<
 //     AccountId,
