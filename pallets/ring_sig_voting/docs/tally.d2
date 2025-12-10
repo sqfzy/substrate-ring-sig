@@ -1,0 +1,166 @@
+direction: down
+vars: {
+  d2-config: {
+    layout-engine: dagre
+  }
+}
+
+classes: {
+  extrinsic: {
+    shape: parallelogram
+    style: {
+      fill: "#e3f2fd"
+      stroke: "#1565c0"
+      stroke-width: 2
+      font-size: 14
+    }
+  }
+  logic: {
+    shape: diamond
+    style: {
+      fill: "#fff3e0"
+      stroke: "#ef6c00"
+    }
+  }
+  process: {
+    shape: rectangle
+    style: {
+      fill: "#f3e5f5"
+      stroke: "#7b1fa2"
+      border-radius: 4
+    }
+  }
+  storage: {
+    shape: cylinder
+    style: {
+      fill: "#e0f2f1"
+      stroke: "#00695c"
+      shadow: true
+    }
+  }
+  update: {
+    shape: rectangle
+    style: {
+      fill: "#e8f5e9"
+      stroke: "#2e7d32"
+      border-radius: 8
+      stroke-width: 2
+    }
+  }
+  success: {
+    shape: circle
+    style: {
+      fill: "#c8e6c9"
+      stroke: "#2e7d32"
+      font-size: 16
+    }
+  }
+  error: {
+    shape: hexagon
+    style: {
+      fill: "#ffebee"
+      stroke: "#c62828"
+      font-size: 12
+    }
+  }
+}
+
+# --- 节点定义 ---
+
+# 1. 输入
+Input: 收到交易 tally() {
+  class: extrinsic
+  label: "Extrinsic: tally\n(origin, poll_id, tally, proof)"
+}
+
+# 2. 前置检查
+CheckAdmin: 权限检查 {
+  class: logic
+  label: "ensure_origin(origin)\nIs Admin?"
+}
+
+GetPoll: 读取 Poll 数据 {
+  class: storage
+  label: "Read: Polls(poll_id)"
+}
+
+CheckState: 状态检查 {
+  class: logic
+  label: "Status == Tallying?"
+}
+
+# 3. 数据准备
+ComputeHash: 计算承诺 (Commitment) {
+  class: process
+  label: "compute_votes_hash()\n(Hash of on-chain votes)"
+}
+
+ConstructInputs: 构造公共输入 {
+  class: process
+  label: "Public Inputs:\n{ poll_id, votes_hash, tally }"
+}
+
+GetVK: 获取验证密钥 {
+  class: storage
+  label: "Read: poll.tally_vk"
+}
+
+# 4. ZK 验证
+VerifyProof: ZK 验证 (Groth16) {
+  class: logic
+  label: "Groth16::verify\n(vk, inputs, proof)?"
+  tooltip: "验证 ZK Proof"
+}
+
+# 5. 更新与存储
+# 修正：这里不再使用 Hexagon，改为 update 类
+UpdateState: 更新状态 {
+  class: update
+  label: "Set Status: Completed"
+}
+
+StoreResult: 存储最终结果 {
+  class: storage
+  label: "Update: Polls\n(poll.tally = result)"
+}
+
+EmitEvent: 发送事件 {
+  class: process
+  label: "Event: PollCompleted"
+}
+
+EndOK: 流程结束 {
+  class: success
+  label: "Success"
+}
+
+# 错误节点
+ErrPerm: Error: BadOrigin {class: error}
+ErrNotFound: Error: PollNotFound {class: error}
+ErrState: Error: InvalidPollStatus {class: error}
+ErrProof: Error: InvalidProof {class: error}
+
+# --- 连线逻辑 ---
+
+Input -> CheckAdmin
+CheckAdmin -> GetPoll: "Yes"
+CheckAdmin -> ErrPerm: "No"
+
+GetPoll -> CheckState
+GetPoll -> ErrNotFound: "Not Found"
+
+CheckState -> ComputeHash: "Yes (Tallying)"
+CheckState -> ErrState: "No"
+
+# 核心验证逻辑
+ComputeHash -> ConstructInputs
+ConstructInputs -> GetVK
+GetVK -> VerifyProof
+
+VerifyProof -> UpdateState: "Valid (Pass)"
+VerifyProof -> ErrProof: "Invalid (Reject)"
+
+# 结果上链
+UpdateState -> StoreResult
+StoreResult -> EmitEvent
+EmitEvent -> EndOK

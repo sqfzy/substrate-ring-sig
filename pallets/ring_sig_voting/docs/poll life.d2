@@ -1,0 +1,213 @@
+vars: {
+  d2-config: {
+    layout-engine: dagre
+  }
+}
+
+# --- 样式定义 ---
+classes: {
+  invisible: {
+    style.opacity: 0
+    label: a
+  }
+  phase_box: {
+    style: {
+      fill: "transparent"
+      stroke: "#9e9e9e"
+      stroke-width: 2
+      stroke-dash: 3
+      border-radius: 8
+      font-size: 16
+      bold: true
+      font-color: "#616161"
+    }
+  }
+  role: {
+    shape: person
+    height: 40
+    style: {
+      fill: "#eceff1"
+      stroke: "#455a64"
+      font-size: 12
+      bold: true
+    }
+  }
+  offchain: {
+    shape: package
+    style: {
+      fill: "#fff3e0"
+      stroke: "#f57c00"
+      stroke-dash: 3
+      font-size: 12
+    }
+  }
+  tx: {
+    shape: parallelogram
+    style: {
+      fill: "#e3f2fd"
+      stroke: "#1565c0"
+      font-size: 12
+    }
+  }
+  logic: {
+    shape: rectangle
+    style: {
+      fill: "#f3e5f5"
+      stroke: "#7b1fa2"
+      border-radius: 4
+      font-size: 12
+    }
+  }
+  state: {
+    shape: hexagon
+    style: {
+      fill: "#e8f5e9"
+      stroke: "#2e7d32"
+      stroke-width: 2
+      shadow: true
+      font-size: 12
+      bold: true
+    }
+  }
+}
+
+grid-rows: 3
+grid-columns: 1
+
+# ==========================================
+# Phase I: 左侧容器
+# ==========================================
+Phase_1: 阶段一：系统初始化 {
+  class: phase_box
+  direction: right
+
+  Admin_1: 管理员 (Admin) {class: role}
+
+  Prep_List: 链下计算 {
+    class: offchain
+    label: "收集公钥\n构建名单"
+  }
+
+  Tx_Reg: Tx: register_ring\n(ring) {class: tx}
+
+  Logic_Reg: 合约执行 {
+    class: logic
+    label: "存储 Ring"
+  }
+
+  Prep_Key: 链下计算 {
+    class: offchain
+    label: "生成计票密钥"
+  }
+
+  Tx_Create: Tx: create_poll {
+    class: tx
+    label: "Tx: create_poll\n(metadata_hash, deadline)"
+  }
+
+  State_Active: State: Active {
+    class: state
+    label: "Active\n(接受投票)"
+  }
+
+  Admin_1 -> Prep_List: 1. 开启投票
+  Prep_List -> Tx_Reg: 发起交易
+  Tx_Reg -> Logic_Reg
+  Logic_Reg -> Prep_Key
+  Prep_Key -> Tx_Create: 发起交易
+  Tx_Create -> State_Active
+}
+
+# ==========================================
+# Phase II: 中间容器 
+# ==========================================
+Phase_2: 阶段二：匿名投票 {
+  class: phase_box
+  direction: left
+
+  Student: 学生 (Voter) {class: role}
+
+  Gen_Vote: 本地生成 {
+    class: offchain
+    label: "1. ECIES 加密投票内容\n2. 生成环签名"
+  }
+
+  Tx_Vote: Tx: vote {
+    class: tx
+    label: "Tx: vote\n(ciphertext, ring_signature, key_image)"
+  }
+
+  Logic_Verify: 智能合约验证 {
+    class: logic
+    label: "1. 验证环签名\n2. 检验密钥镜像"
+  }
+
+  Vote_Recorded: 选票已记录 {
+    shape: queue
+    style: {
+      fill: "#e0f2f1"
+      stroke: "#00695c"
+    }
+  }
+
+  Student -> Gen_Vote: 2. 投票操作
+  Gen_Vote -> Tx_Vote: 发起交易
+  Tx_Vote -> Logic_Verify
+  Logic_Verify -> Vote_Recorded: 验证通过
+  Vote_Recorded -> Student
+}
+
+# ==========================================
+# Phase III: 右侧容器 
+# ==========================================
+Phase_3: 阶段三：结算与公示 {
+  class: phase_box
+  direction: right
+
+  State_Tallying: State: Tallying {
+    class: state
+    label: "Tallying\n(锁定状态)"
+  }
+
+  Admin_2: 管理员 (Admin) {class: role}
+
+  Calc_Result: 链下计算 {
+    class: offchain
+    label: "1. ECIES 解密投票内容\n2. 计票\n3. 生成 ZK Proof"
+  }
+
+  Tx_Tally: Tx: tally {
+    class: tx
+    label: "Tx: tally\n(tally_result, zk_proof)"
+  }
+
+  Logic_Proof: 零知识验证 {
+    class: logic
+    label: "零知识验证计票结果"
+  }
+
+  State_Completed: State: Completed {
+    class: state
+    label: "Completed\n(结果公示)"
+  }
+
+  State_Tallying -> Admin_2
+  Admin_2 -> Calc_Result: 3. 计票结算
+  Calc_Result -> Tx_Tally: 发起交易
+  Tx_Tally -> Logic_Proof
+  Logic_Proof -> State_Completed: 验证通过
+}
+
+Phase_1.State_Active -> Phase_2.Student: 投票通道开启 {
+  style: {
+    stroke-width: 2
+    stroke: "#1565c0"
+  }
+}
+
+Phase_2.Vote_Recorded -> Phase_3.State_Tallying: 截止时间触发 {
+  style: {
+    stroke-width: 2
+    stroke: "#1565c0"
+  }
+}

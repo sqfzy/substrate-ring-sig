@@ -36,6 +36,7 @@ use frame_support::{
     derive_impl,
     dispatch::DispatchClass,
     parameter_types,
+    ord_parameter_types,
     traits::{
         ConstBool, ConstU32, ConstU64, ConstU8, EitherOfDiverse, TransformOrigin, VariantCountOf,
     },
@@ -55,6 +56,7 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::Perbill;
 use sp_version::RuntimeVersion;
 use xcm::latest::prelude::BodyId;
+use scale_info::prelude::vec;
 
 // Local module imports
 use super::OriginCaller;
@@ -355,6 +357,7 @@ impl pallet_preimage::Config for Runtime {
     >;
 }
 
+
 parameter_types! {
     pub MaximumSchedulerWeight: Weight = Perbill::from_percent(80) *
         RuntimeBlockWeights::get().max_block;
@@ -377,86 +380,18 @@ impl pallet_scheduler::Config for Runtime {
     type BlockNumberProvider = frame_system::Pallet<Runtime>;
 }
 
-// parameter_types! {
-//     pub const CouncilMotionDuration: BlockNumber = 5 * crate::DAYS;
-//     pub const CouncilMaxProposals: u32 = 100;
-//     pub const CouncilMaxMembers: u32 = 100;
-//     pub const ProposalDepositOffset: Balance = ExistentialDeposit::get() + ExistentialDeposit::get();
-//     pub const ProposalHoldReason: RuntimeHoldReason =
-//         RuntimeHoldReason::Council(pallet_collective::HoldReason::ProposalSubmission);
-// 	  pub MaxCollectivesProposalWeight: Weight = Perbill::from_percent(50) * RuntimeBlockWeights::get().max_block;
-// }
-//
-// type CouncilCollective = pallet_collective::Instance1;
-// impl pallet_collective::Config<CouncilCollective> for Runtime {
-//     type RuntimeOrigin = RuntimeOrigin;
-//     type Proposal = RuntimeCall;
-//     type RuntimeEvent = RuntimeEvent;
-//     type MotionDuration = CouncilMotionDuration;
-//     type MaxProposals = CouncilMaxProposals;
-//     type MaxMembers = CouncilMaxMembers;
-//     type DefaultVote = pallet_collective::PrimeDefaultVote;
-//     type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
-//     type SetMembersOrigin = EnsureRoot<Self::AccountId>;
-//     type MaxProposalWeight = MaxCollectivesProposalWeight;
-//     type DisapproveOrigin = EnsureRoot<Self::AccountId>;
-//     type KillOrigin = EnsureRoot<Self::AccountId>;
-//     type Consideration = HoldConsideration<
-//         AccountId,
-//         Balances,
-//         ProposalHoldReason,
-//         pallet_collective::deposit::Delayed<
-//             ConstU32<2>,
-//             pallet_collective::deposit::Linear<ConstU32<2>, ProposalDepositOffset>,
-//         >,
-//         u32,
-//     >;
-// }
-
-// #[cfg(feature = "runtime-benchmarks")]
-// use ring_sig_voting::simple_voting::{Tally, Vote};
-// #[cfg(not(feature = "runtime-benchmarks"))]
-// use ring_sig_voting::evaluative_voting ::{Tally, Vote};
-//
-// parameter_types! {
-// 	pub const SubmissionDeposit: Balance = 10;
-// 	pub const ClosureIncentive: Balance = 1000;
-// }
-//
-// impl ring_sig_voting::Config for Runtime {
-//     type RuntimeEvent = RuntimeEvent;
-//     type Currency = Balances;
-//     type Preimages = pallet_preimage::Pallet<Self>;
-//     type SubmissionDeposit = SubmissionDeposit;
-//     type CreatePollOrigin = frame_system::EnsureSigned<Self::AccountId>;
-//     type ClosePollOrigin = EnsureRoot<u64>;
-//     type RingAdminOrigin = frame_system::EnsureSigned<Self::AccountId>;
-//     type Vote = Vote;
-//     type Tally = Tally;
-//     type MaxDescriptionLength = ConstU32<256>;
-//     type MaxMembersInRing = ConstU32<128>;
-//     type NumRingLayers = ConstU32<1>;
-//     type ClosureIncentive = ClosureIncentive;
-//     type MaxVoteSize = ConstU32<64>;
-//     type MaxVotesPerPoll = ConstU32<1000>;
-//     type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
-// }
-
-// type CreatePollOrigin = pallet_collective::EnsureProportionMoreThan<
-//     AccountId,
-//     CouncilCollective,
-//     1,
-//     2,
-// >;
-// type ClosePollOrigin = pallet_collective::EnsureProportionMoreThan<
-//     AccountId,
-//     CouncilCollective,
-//     1,
-//     2,
-// >;
-// type RingAdminOrigin =pallet_collective::EnsureProportionMoreThan<
-//     AccountId,
-//     CouncilCollective,
-//     1,
-//     2,
-// >;
+impl ring_sig_voting::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeCall = RuntimeCall;
+    type Scheduler = pallet_scheduler::Pallet<Runtime>;
+    type Preimages = pallet_preimage::Pallet<Runtime>;
+    type MaxDescriptionLength = ConstU32<256>;
+    type MaxRingSize = ConstU32<16>;
+    type MaxVkLength = ConstU32<2048>;
+    type MaxCiphertextLength = ConstU32<128>;
+    type MaxVoteNum = ConstU32<1000>;
+    #[cfg(not(feature = "runtime-benchmarks"))]
+    type AdminOrigin = frame_system::EnsureRoot<AccountId>;
+    #[cfg(feature = "runtime-benchmarks")]
+    type AdminOrigin = frame_system::EnsureSigned<AccountId>;
+}

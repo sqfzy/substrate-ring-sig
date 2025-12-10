@@ -9,9 +9,9 @@
 8. 使用ZKP证明上传的tally合法，而不是使用乐观验证模型
   - 链上存：vk
   - 链下存：pk
-9. Tally数据结构的定义也改为线下(更灵活)，线上只存hash？[x] 目前确定为u64类型 
-10. 去掉deposit相关代码
+9. Tally数据结构的定义也改为线下(更灵活)，线上只存hash？[x] 目前确定为u32类型 
+10. 去掉deposit相关代码 [x]
 11. 使用门限加密，教务处代表，学生会代表，教师工会代表等等共同生成tally公私钥对
-12. 为struct Poll 实现get_status，记得检查deadline, 实现set_status，确保状态转换合法
-13. Poll new() request metadata_hash; drop() unrequest metadata_hash; set_deadline
-
+12. 为struct Poll 实现get_status，记得检查deadline, 实现set_status，确保状态转换合法 [x]
+13. Poll new() request metadata_hash; drop() unrequest metadata_hash; set_deadline [x]
+14. 实现链下生成proof的逻辑，用于test和benchmark通过

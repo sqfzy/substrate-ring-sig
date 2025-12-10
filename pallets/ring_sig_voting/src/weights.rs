@@ -17,7 +17,7 @@ use core::marker::PhantomData;
 
 /// Weight functions needed for pallet_anonymous_voting. 
 pub trait WeightInfo {
-    fn register_ring_group(n: u32) -> Weight;
+    fn register_ring(n: u32) -> Weight;
     fn create_poll() -> Weight;
     fn vote(n: u32) -> Weight;
     fn tally() -> Weight;
@@ -33,7 +33,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     /// Storage: `AnonymousVoting::RingCount` (r:1 w:1)
     /// Storage: `AnonymousVoting::Rings` (r:0 w:1)
     /// The range of component `n` is `[1, 256]`.
-    fn register_ring_group(n: u32) -> Weight {
+    fn register_ring(n: u32) -> Weight {
         Weight::from_parts(15_000_000, 5000)
             .saturating_add(Weight::from_parts(500_000, 0). saturating_mul(n. into()))
             .saturating_add(T::DbWeight::get().reads(1_u64))
@@ -103,7 +103,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
 // For tests
 impl WeightInfo for () {
-    fn register_ring_group(n: u32) -> Weight {
+    fn register_ring(n: u32) -> Weight {
         Weight::from_parts(15_000_000, 5000)
             .saturating_add(Weight::from_parts(500_000, 0).saturating_mul(n.into()))
             .saturating_add(RocksDbWeight::get().reads(1_u64))

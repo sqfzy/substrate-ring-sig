@@ -1,0 +1,171 @@
+direction: down
+vars: {
+  d2-config: {
+    layout-engine: dagre
+  }
+}
+
+# --- 统一样式定义 ---
+classes: {
+  # 交易输入
+  extrinsic: {
+    shape: parallelogram
+    style: {
+      fill: "#e3f2fd"
+      stroke: "#1565c0"
+      stroke-width: 2
+      font-size: 14
+    }
+  }
+  # 逻辑判断
+  logic: {
+    shape: diamond
+    style: {
+      fill: "#fff3e0"
+      stroke: "#ef6c00"
+    }
+  }
+  # 内部处理
+  process: {
+    shape: rectangle
+    style: {
+      fill: "#f3e5f5"
+      stroke: "#7b1fa2"
+      border-radius: 4
+    }
+  }
+  # 存储操作
+  storage: {
+    shape: cylinder
+    style: {
+      fill: "#e0f2f1"
+      stroke: "#00695c"
+      shadow: true
+    }
+  }
+  # 状态变更 (新建，区别于普通处理)
+  update: {
+    shape: rectangle
+    style: {
+      fill: "#e8f5e9"
+      stroke: "#2e7d32"
+      border-radius: 8
+      stroke-width: 2
+    }
+  }
+  # 成功
+  success: {
+    shape: circle
+    style: {
+      fill: "#c8e6c9"
+      stroke: "#2e7d32"
+      font-size: 16
+    }
+  }
+  # 错误 (统一使用六边形)
+  error: {
+    shape: hexagon
+    style: {
+      fill: "#ffebee"
+      stroke: "#c62828"
+      font-size: 12
+    }
+  }
+}
+
+# --- 节点定义 ---
+
+# 1. 输入
+Start: 收到交易 vote() {
+  class: extrinsic
+  label: "Extrinsic: vote\n(origin, poll_id, ciphertext, proof...)"
+}
+
+# 2. 预检查
+CheckSigned: 验签发起人 {
+  class: process
+  label: "ensure_signed(origin)"
+}
+
+GetPoll: 获取 Poll 信息 {
+  class: storage
+  label: "Read: Polls(poll_id)"
+}
+
+CheckStatus: 状态检查 {
+  class: logic
+  label: "Status == Active?"
+}
+
+GetRing: 获取 Ring 信息 {
+  class: storage
+  label: "Read: Rings(poll.ring_id)"
+}
+
+# 3. 密码学验证
+VerifySig: 验证环签名 (BLSAG) {
+  class: logic
+  label: "BLSAG::verify()\n(Sig, Ring, KeyImage)"
+  tooltip: "验证签名者是否在 Ring 中，且未篡改消息"
+}
+
+# 4. 防双花检查
+CheckKeyImage: 检查 Key Image {
+  class: logic
+  label: "UsedKeyImages.contains\n(KeyImage)?"
+  tooltip: "检查该私钥是否在此次投票中已使用过"
+}
+
+# 5. 存储更新
+UpdateUsed: 记录 Key Image {
+  class: storage
+  label: "Insert: UsedKeyImages\n(poll_id, key_image)"
+}
+
+StoreVote: 存储加密选票 {
+  class: storage
+  label: "Push: EncryptedVotes\n(poll_id, vote)"
+}
+
+EmitEvent: 发送事件 {
+  class: process
+  label: "Event: VoteSubmitted"
+}
+
+EndSuccess: 成功 {
+  class: success
+  label: "OK"
+}
+
+# 错误节点
+ErrNotFound: Error: Poll/RingNotFound {class: error}
+ErrStatus: Error: InvalidPollStatus {class: error}
+ErrSig: Error: InvalidSignature {class: error}
+ErrReplay: Error: KeyImageAlreadyUsed {class: error}
+
+# --- 流程连接 ---
+
+Start -> CheckSigned
+CheckSigned -> GetPoll
+GetPoll -> CheckStatus
+GetPoll -> ErrNotFound: "Poll 不存在"
+
+# 状态分支
+CheckStatus -> GetRing: "Active"
+CheckStatus -> ErrStatus: "Not Active"
+
+GetRing -> VerifySig
+GetRing -> ErrNotFound: "Ring 不存在"
+
+# 签名验证分支
+VerifySig -> CheckKeyImage: "Valid"
+VerifySig -> ErrSig: "Invalid"
+
+# 防双花分支 (逻辑：contains == false 才是合法的)
+CheckKeyImage -> UpdateUsed: "No (New Vote)"
+CheckKeyImage -> ErrReplay: "Yes (Duplicate)"
+
+# 存储与结束
+UpdateUsed -> StoreVote
+StoreVote -> EmitEvent
+EmitEvent -> EndSuccess

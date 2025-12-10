@@ -260,13 +260,12 @@ pub enum PollStatus {
 )]
 #[scale_info(skip_type_params(T))]
 pub struct Poll<T: crate::Config> {
-    pub creator: T::AccountId,
     pub poll_id: PollId,
     pub ring_id: RingId,
     pub description: BoundedVec<u8, T::MaxDescriptionLength>,
     pub metadata_hash: <T::Hashing as Hash>::Output,
     pub deadline: BlockNumberFor<T>,
-    pub tally_public_key: CompressedRistrettoWrapper,
+    pub poll_public_key: CompressedRistrettoWrapper,
     pub tally_vk: VkWrapper,
     pub tally: Option<Tally>,
     pub status: PollStatus,
@@ -275,13 +274,12 @@ pub struct Poll<T: crate::Config> {
 impl<T: crate::Config> Poll<T> {
     /// Create a new poll
     pub fn new(
-        creator: T::AccountId,
         poll_id: PollId,
         ring_id: RingId,
         description: BoundedVec<u8, T::MaxDescriptionLength>,
         metadata_hash: <T::Hashing as Hash>::Output,
         deadline: BlockNumberFor<T>,
-        tally_public_key: CompressedRistrettoWrapper,
+        poll_public_key: CompressedRistrettoWrapper,
         tally_vk: VkWrapper,
     ) -> Result<Self, DispatchError> {
         // Check if deadline is valid
@@ -293,13 +291,12 @@ impl<T: crate::Config> Poll<T> {
         schedule_deadline_task::<T>(poll_id, deadline)?;
 
         Ok(Self {
-            creator,
             poll_id,
             ring_id,
             description,
             metadata_hash,
             deadline,
-            tally_public_key,
+            poll_public_key,
             tally_vk,
             tally: None,
             status: PollStatus::Active,

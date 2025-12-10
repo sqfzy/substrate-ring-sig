@@ -3,8 +3,8 @@
 #[cfg(any(test, feature = "runtime-benchmarks"))]
 mod mock;
 
-// #[cfg(test)]
-// mod tests;
+#[cfg(test)]
+mod tests;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
@@ -54,7 +54,7 @@ pub mod pallet {
                 Hasher = Self::Hashing,
             >;
 
-		    type Preimages: QueryPreimage<H = Self::Hashing> + StorePreimage;
+        type Preimages: QueryPreimage<H = Self::Hashing> + StorePreimage;
 
         /// Maximum description length
         #[pallet::constant]
@@ -132,7 +132,6 @@ pub mod pallet {
         /// A poll has been created
         PollCreated {
             poll_id: PollId,
-            creator: T::AccountId,
         },
         /// A vote has been submitted
         VoteSubmitted { poll_id: PollId, vote_index: u32 },
@@ -144,8 +143,8 @@ pub mod pallet {
         PollCancelled { poll_id: PollId },
         /// A poll has been paused
         PollPaused { poll_id: PollId },
-        /// A poll has been resumed
-        PollResumed { poll_id: PollId },
+        /// A poll has been actived
+        PollActive { poll_id: PollId },
         /// A poll deadline has been updated
         PollDeadlineUpdated {
             poll_id: PollId,
@@ -195,11 +194,9 @@ pub mod pallet {
         /// # Arguments
         /// * `origin` - Must be admin
         /// * `ring` - Vector of public keys forming the ring
-        ///
-        /// # Weight: O(ring_size)
         #[pallet::call_index(0)]
         #[pallet::weight(10_000 + (ring.len() as u64) * 1_000)]
-        pub fn register_ring_group(
+        pub fn register_ring(
             origin: OriginFor<T>,
             ring: Vec<CompressedRistrettoWrapper>,
         ) -> DispatchResult {
@@ -232,10 +229,8 @@ pub mod pallet {
         /// * `description` - Poll description
         /// * `metadata_hash` - Hash of off-chain metadata
         /// * `deadline` - Block number when voting ends
-        /// * `tally_public_key` - Public key for vote encryption
+        /// * `poll_public_key` - Public key for vote encryption
         /// * `tally_vk` - Groth16 verification key
-        ///
-        /// # Weight: O(1)
         #[pallet::call_index(1)]
         #[pallet::weight(50_000)]
         pub fn create_poll(
@@ -244,12 +239,11 @@ pub mod pallet {
             description: Vec<u8>,
             metadata: Vec<u8>,
             deadline: BlockNumberFor<T>,
-            tally_public_key: CompressedRistrettoWrapper,
+            poll_public_key: CompressedRistrettoWrapper,
             tally_vk: VkWrapper,
         ) -> DispatchResult {
             // Permission check
-            T::AdminOrigin::ensure_origin(origin.clone())?;
-            let creator = ensure_signed(origin)?;
+            T::AdminOrigin::ensure_origin(origin)?;
 
             // Check if ring exists
             ensure!(Rings::<T>::contains_key(ring_id), Error::<T>::RingNotFound);
@@ -260,19 +254,19 @@ pub mod pallet {
 
             // Get next poll ID
             let poll_id = PollCount::<T>::get();
-            let next_poll_id = poll_id.checked_add(1).ok_or(Error::<T>::Overflow)?;
+            let next_poll_id = poll_id.wrapping_add(1);
 
-            let metadata_hash = T::Preimages::note(scale_info::prelude::borrow::Cow::Borrowed(&metadata))?;
+            let metadata_hash =
+                T::Preimages::note(scale_info::prelude::borrow::Cow::Borrowed(&metadata))?;
 
             // Create poll
             let poll = Poll::new(
-                creator.clone(),
                 poll_id,
                 ring_id,
                 bounded_description,
                 metadata_hash,
                 deadline,
-                tally_public_key,
+                poll_public_key,
                 tally_vk,
             )?;
 
@@ -281,7 +275,7 @@ pub mod pallet {
             PollCount::<T>::put(next_poll_id);
 
             // Emit event
-            Self::deposit_event(Event::PollCreated { poll_id, creator });
+            Self::deposit_event(Event::PollCreated { poll_id });
 
             Ok(())
         }
@@ -296,8 +290,6 @@ pub mod pallet {
         /// * `challenge` - BLSAG challenge
         /// * `responses` - BLSAG responses
         /// * `key_image` - Key image to prevent double voting
-        ///
-        /// # Weight: O(ring_size)
         #[pallet::call_index(2)]
         #[pallet::weight(100_000 + (responses.len() as u64) * 5_000)]
         pub fn vote(
@@ -357,12 +349,11 @@ pub mod pallet {
             // Store encrypted vote
             let vote_index =
                 EncryptedVotes::<T>::try_mutate(poll_id, |votes| -> Result<u32, DispatchError> {
-                    // 1. 修改返回类型为 Result<usize, ...>
                     votes
                         .try_push(encrypted_vote)
-                        .map_err(|_| Error::<T>::Overflow)?; // 2. 这里必须加 '?' 将错误抛出
+                        .map_err(|_| Error::<T>::Overflow)?;
 
-                    Ok(votes.len() as u32 - 1) // 3. 现在可以正确返回 usize 了
+                    Ok(votes.len() as u32 - 1)
                 })?;
 
             // Emit event
@@ -381,8 +372,6 @@ pub mod pallet {
         /// * `poll_id` - ID of the poll to tally
         /// * `tally` - Tally results
         /// * `zk_proof` - Zero-knowledge proof of correct tallying
-        ///
-        /// # Weight: O(proof_verification)
         #[pallet::call_index(3)]
         #[pallet::weight(500_000)]
         pub fn tally(
@@ -440,8 +429,6 @@ pub mod pallet {
         /// # Arguments
         /// * `origin` - Must be admin
         /// * `poll_id` - ID of the poll to cancel
-        ///
-        /// # Weight: O(1)
         #[pallet::call_index(4)]
         #[pallet::weight(10_000)]
         pub fn tally_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
@@ -465,8 +452,6 @@ pub mod pallet {
         /// # Arguments
         /// * `origin` - Must be admin
         /// * `poll_id` - ID of the poll to cancel
-        ///
-        /// # Weight: O(1)
         #[pallet::call_index(5)]
         #[pallet::weight(10_000)]
         pub fn cancel_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
@@ -490,8 +475,6 @@ pub mod pallet {
         /// # Arguments
         /// * `origin` - Must be admin
         /// * `poll_id` - ID of the poll to pause
-        ///
-        /// # Weight: O(1)
         #[pallet::call_index(6)]
         #[pallet::weight(10_000)]
         pub fn pause_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
@@ -510,15 +493,36 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Active a poll
+        ///
+        /// # Arguments
+        /// * `origin` - Must be admin
+        /// * `poll_id` - ID of the poll to pause
+        #[pallet::call_index(7)]
+        #[pallet::weight(10_000)]
+        pub fn active_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
+            // Permission check
+            T::AdminOrigin::ensure_origin(origin)?;
+
+            Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
+                let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
+                poll.set_status(PollStatus::Active)?;
+                Ok(())
+            })?;
+
+            // Emit event
+            Self::deposit_event(Event::PollActive { poll_id });
+
+            Ok(())
+        }
+
         /// Set deadline for a poll
         ///
         /// # Arguments
         /// * `origin` - Must be admin
         /// * `poll_id` - ID of the poll
         /// * `new_deadline` - New deadline block number
-        ///
-        /// # Weight: O(1)
-        #[pallet::call_index(7)]
+        #[pallet::call_index(8)]
         #[pallet::weight(10_000)]
         pub fn set_deadline(
             origin: OriginFor<T>,
@@ -559,4 +563,23 @@ pub mod pallet {
             H256::from_slice(hash.as_ref())
         }
     }
+}
+
+// 我们需要在区块链上执行签名的验证算法，这是确定性算法，但`nazgul`作为完整的签名库包含了签名及其它算法，
+// 这些算法依赖于 `getrandom` 来生成随机数。在区块链环境中，不允许出现外部随机源，因此使用`nazgul`时我们需要
+// 为 `getrandom` 提供一个自定义的实现。
+// 生产环境中，我们绝不会用到`getrandom`，默认backends实现为空（若调用相关代码，会报错）。
+// 但在测试环境中，我们需要使用`nazgul`来生成签名，因此这里提供一个简单的伪随机数生成器 (PRNG) 实现。
+#[cfg(all(not(feature = "std"), target_arch = "wasm32"))]
+mod wasm_rng_impl {
+    use getrandom::{register_custom_getrandom, Error};
+
+    fn custom_getrandom_impl(dest: &mut [u8]) -> Result<(), Error> {
+        for i in dest.iter_mut() {
+            *i = 0;
+        }
+        Ok(())
+    }
+
+    register_custom_getrandom!(custom_getrandom_impl);
 }

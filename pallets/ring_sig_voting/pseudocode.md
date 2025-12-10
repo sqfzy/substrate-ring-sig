@@ -1,7 +1,7 @@
 # system
 人物：教务处代表，学生会代表，教师工会代表，老师群体，学生群体
 链上存储：tally_vk，rings，polls, encrypted_votes, used_key_images, tallies, poll_count, ring_count
-链下存储：tally_pk, metadata, tally_private_key
+链下存储：tally_pk, metadata, poll_private_key
 
 # 约定
 投票加解密使用 `aad = genesis_hash || poll_id || key_image`,`nonce = [0;32]`
@@ -16,15 +16,15 @@ zk-SNARKs使用 Groth16
 
 # function
 ## 链上
-1. register_ring_group(admin, ring)
+1. register_ring(admin, ring)
     1. 权限检查
     2. 存储ring到Rings
     3. 发送事件 RingRegistered 
 
-2. create_poll(admin, ring_id, description, metadata_hash, deadline, tally_public_key, tally_vk)
+2. create_poll(admin, ring_id, description, metadata_hash, deadline, poll_public_key, tally_vk)
     1. 权限检查
     2. 检验截止日期是否合法，RingId是否存在
-    3. Poll::new(ring_id, description, metadata_hash, deadline, tally_public_key, tally_vk)
+    3. Poll::new(ring_id, description, metadata_hash, deadline, poll_public_key, tally_vk)
     4. poll.set_status(Active)。存储poll到Polls
     5. 发送事件 PollCreated
 
@@ -60,6 +60,11 @@ zk-SNARKs使用 Groth16
     2. poll.set_status(Paused)
     3. 发送事件 PollPaused
 
+8. active_poll(admin, poll_id)
+    1. 权限检查
+    2. poll.set_status(Active)
+    3. 发送事件 PollActivated
+
 8. set_deadline(admin, poll_id, new_deadline)
     1. 权限检查
     2. 确保 poll.get_status() == Active.
@@ -70,7 +75,8 @@ zk-SNARKs使用 Groth16
 
 ## 链下
 1. prove(tally_pk, circuit)
-2. decrypt(tally_private_key, encrypted_vote)
+2. decrypt(poll_private_key, encrypted_vote)
+3. encrypt(poll_public_key, vote)
 
 
 # types
@@ -157,7 +163,7 @@ pub struct Poll<T: crate::Config> {
     /// 截止时间
     pub deadline: T::BlockNumber,
     /// 统计公钥
-    pub tally_public_key: CompressedRistrettoWrapper,
+    pub poll_public_key: CompressedRistrettoWrapper,
     /// 统计验证密钥（Groth16）
     pub tally_vk: BoundedVec<u8, T::MaxVkLength>,
     /// 投票状态

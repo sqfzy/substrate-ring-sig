@@ -117,7 +117,7 @@ RingSigVoting::close_poll(RawOrigin::Signed(caller), poll_id);
 ```
 对于非`#[extrinsic_call]`:
 ```rust
-RingSigVoting::<T>::register_ring_group(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
+RingSigVoting::<T>::register_ring(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
 ```
 注意`clone()`和`into()`的使用
 

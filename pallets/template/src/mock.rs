@@ -48,7 +48,6 @@ impl crate::Config for Test {
     type WeightInfo = ();
 }
 
-
 impl pallet_preimage::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
