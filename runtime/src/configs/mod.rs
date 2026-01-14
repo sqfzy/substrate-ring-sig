@@ -30,13 +30,14 @@ use polkadot_sdk::{staging_parachain_info as parachain_info, staging_xcm as xcm,
 use polkadot_sdk::{staging_xcm_builder as xcm_builder, staging_xcm_executor as xcm_executor};
 
 // Substrate and Polkadot dependencies
+use crate::polkadot_sdk_frame::account::AsEnsureOriginWithArg;
+use crate::Assets;
 use cumulus_pallet_parachain_system::RelayNumberMonotonicallyIncreases;
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
 use frame_support::{
     derive_impl,
     dispatch::DispatchClass,
-    parameter_types,
-    ord_parameter_types,
+    ord_parameter_types, parameter_types,
     traits::{
         ConstBool, ConstU32, ConstU64, ConstU8, EitherOfDiverse, TransformOrigin, VariantCountOf,
     },
@@ -52,11 +53,11 @@ use parachains_common::message_queue::{NarrowOriginToSibling, ParaIdToSibling};
 use polkadot_runtime_common::{
     xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
 };
+use scale_info::prelude::vec;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::Perbill;
 use sp_version::RuntimeVersion;
 use xcm::latest::prelude::BodyId;
-use scale_info::prelude::vec;
 
 // Local module imports
 use super::OriginCaller;
@@ -357,7 +358,6 @@ impl pallet_preimage::Config for Runtime {
     >;
 }
 
-
 parameter_types! {
     pub MaximumSchedulerWeight: Weight = Perbill::from_percent(80) *
         RuntimeBlockWeights::get().max_block;
@@ -380,6 +380,10 @@ impl pallet_scheduler::Config for Runtime {
     type BlockNumberProvider = frame_system::Pallet<Runtime>;
 }
 
+parameter_types! {
+    pub const TallyVkBytes: &'static [u8] = include_bytes!("../../../srs12.bin");
+}
+
 impl ring_sig_voting::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -387,11 +391,90 @@ impl ring_sig_voting::Config for Runtime {
     type Preimages = pallet_preimage::Pallet<Runtime>;
     type MaxDescriptionLength = ConstU32<256>;
     type MaxRingSize = ConstU32<16>;
-    type MaxVkLength = ConstU32<2048>;
     type MaxCiphertextLength = ConstU32<128>;
     type MaxVoteNum = ConstU32<1000>;
     #[cfg(not(feature = "runtime-benchmarks"))]
     type AdminOrigin = frame_system::EnsureRoot<AccountId>;
     #[cfg(feature = "runtime-benchmarks")]
     type AdminOrigin = frame_system::EnsureSigned<AccountId>;
+}
+
+parameter_types! {
+    pub const AssetDeposit: u128 = 100;
+    pub const ApprovalDeposit: u128 = 1;
+    pub const AssetAccountDeposit: u128 = 10;
+    pub const MetadataDepositBase: u128 = 10;
+    pub const MetadataDepositPerByte: u128 = 1;
+    pub const StringLimit: u32 = 50;
+}
+
+impl pallet_assets::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type Balance = u128;
+    type AssetId = u32;
+    type AssetIdParameter = codec::Compact<u32>;
+    type Currency = Balances;
+    type CreateOrigin = AsEnsureOriginWithArg<frame_system::EnsureSigned<AccountId>>;
+    type ForceOrigin = EnsureRoot<AccountId>;
+    type AssetDeposit = AssetDeposit;
+    type AssetAccountDeposit = AssetAccountDeposit;
+    type MetadataDepositBase = MetadataDepositBase;
+    type MetadataDepositPerByte = MetadataDepositPerByte;
+    type ApprovalDeposit = ApprovalDeposit;
+    type StringLimit = StringLimit;
+    type Freezer = ();
+    type Extra = ();
+    type Holder = ();
+    type WeightInfo = ();
+    type RemoveItemsLimit = ConstU32<1000>;
+    type CallbackHandle = ();
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = ();
+}
+
+parameter_types! {
+    // Pallet ID - 用于生成池账户
+    pub const LiquidityPoolPalletId: PalletId = PalletId(*b"liqd/pol");
+
+    // 最小流动性 - 防止价格操纵攻击
+    // 首次添加流动性时会锁定这个数量的 LP Token
+    pub const MinimumLiquidity: u128 = 1_000;
+
+    // 默认手续费率（基点）
+    // 30 基点 = 0.3%（类似 Uniswap V2）
+    pub const DefaultFeeRate: u32 = 30;
+
+    // 最大交易路径长度
+    // 例如：Token A -> Token B -> Token C -> Token D (长度为 4)
+    pub const MaxPathLength: u32 = 4;
+}
+
+// 3. 实现 Config trait
+impl pallet_liquidity_pool::Config for Runtime {
+    // 事件类型
+    type RuntimeEvent = RuntimeEvent;
+
+    // 资产 ID 类型 - 通常使用 u32
+    type AssetId = u32;
+
+    // 余额类型 - 通常使用 u128
+    type Balance = u128;
+
+    // 池 ID 类型 - 用于唯一标识每个流动性池
+    type PoolId = u32;
+
+    // 资产接口 - 使用 pallet-assets
+    type Assets = Assets;
+
+    // Pallet ID
+    type PalletId = LiquidityPoolPalletId;
+
+    // 最小流动性
+    type MinimumLiquidity = MinimumLiquidity;
+
+    // 默认手续费率
+    type DefaultFeeRate = DefaultFeeRate;
+
+    // 最大路径长度
+    type MaxPathLength = MaxPathLength;
 }

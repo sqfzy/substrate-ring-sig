@@ -97,12 +97,12 @@ Phase_1: 阶段一：系统初始化 {
 
   Prep_Key: 链下计算 {
     class: offchain
-    label: "生成投票密钥对\n(Pub, Priv)"
+    label: "生成计票密钥"
   }
 
   Tx_Create: Tx: create_poll {
     class: tx
-    label: "Tx: create_poll\n(metadata, deadline, pub_key)"
+    label: "Tx: create_poll\n(metadata_hash, deadline)"
   }
 
   State_Active: State: Active {
@@ -139,7 +139,7 @@ Phase_2: 阶段二：匿名投票 {
 
   Logic_Verify: 智能合约验证 {
     class: logic
-    label: "1. 验证环签名\n2. 检验密钥镜像 (防双花)"
+    label: "1. 验证环签名\n2. 检验密钥镜像"
   }
 
   Vote_Recorded: 选票已记录 {
@@ -160,52 +160,42 @@ Phase_2: 阶段二：匿名投票 {
 # ==========================================
 # Phase III: 右侧容器 
 # ==========================================
-Phase_3: 阶段三：揭示与全民验证 {
+Phase_3: 阶段三：结算与公示 {
   class: phase_box
   direction: right
 
   State_Tallying: State: Tallying {
     class: state
-    label: "Tallying\n(截止/等待揭示)"
+    label: "Tallying\n(锁定状态)"
   }
 
   Admin_2: 管理员 (Admin) {class: role}
 
   Calc_Result: 链下计算 {
     class: offchain
-    label: "1. 使用 PrivKey 解密所有选票\n2. 统计 Tally"
+    label: "1. ECIES 解密投票内容\n2. 计票\n3. 生成 ZK Proof"
   }
 
-  Tx_Reveal: Tx: reveal_outcome {
+  Tx_Tally: Tx: tally {
     class: tx
-    label: "Tx: reveal_outcome\n(tally, private_key)"
+    label: "Tx: tally\n(tally_result, zk_proof)"
   }
 
-  Logic_KeyCheck: 链上验证 {
+  Logic_Proof: 零知识验证 {
     class: logic
-    label: "验证私钥匹配性:\nDerived(Priv) == Stored(Pub)?"
+    label: "零知识验证计票结果"
   }
 
   State_Completed: State: Completed {
     class: state
-    label: "Completed\n(私钥公开)"
-  }
-
-  Public_Verify: 全民验证 {
-    class: role
-    label: "公众/观察者"
-    style: {
-      fill: "#fff9c4"
-      stroke: "#fbc02d"
-    }
+    label: "Completed\n(结果公示)"
   }
 
   State_Tallying -> Admin_2
-  Admin_2 -> Calc_Result: 3. 统计结果
-  Calc_Result -> Tx_Reveal: 4. 揭示结果
-  Tx_Reveal -> Logic_KeyCheck
-  Logic_KeyCheck -> State_Completed: 验证通过
-  State_Completed -> Public_Verify: 5. 拉取私钥\n本地重算验证
+  Admin_2 -> Calc_Result: 3. 计票结算
+  Calc_Result -> Tx_Tally: 发起交易
+  Tx_Tally -> Logic_Proof
+  Logic_Proof -> State_Completed: 验证通过
 }
 
 Phase_1.State_Active -> Phase_2.Student: 投票通道开启 {
@@ -215,7 +205,7 @@ Phase_1.State_Active -> Phase_2.Student: 投票通道开启 {
   }
 }
 
-Phase_2.Vote_Recorded -> Phase_3.State_Tallying: 截止时间到达\n(tally_poll) {
+Phase_2.Vote_Recorded -> Phase_3.State_Tallying: 截止时间触发 {
   style: {
     stroke-width: 2
     stroke: "#1565c0"

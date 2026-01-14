@@ -8,8 +8,11 @@ edition = "2021"
 [workspace]
 default-members = ["pallets/template", "runtime"]
 members = [
-    "node", "pallets/custom-pallet", "pallets/ring_sig_voting",
+    "node",
+    "pallets/custom-pallet",
+    "pallets/ring_sig_voting",
     "pallets/template",
+    "pallets/pallet_liquidity_pool",
     "runtime",
 ]
 resolver = "2"
@@ -37,6 +40,7 @@ frame = { version = "0.9.1", default-features = false, package = "polkadot-sdk-f
 pallet-scheduler = { version = "*", default-features = false }
 pallet-preimage = { version = "*", default-features = false }
 pallet-balances = { version = "*", default-features = false }
+pallet-assets = { version = "*", default-features = false }
 
 [profile.release]
 opt-level = 3

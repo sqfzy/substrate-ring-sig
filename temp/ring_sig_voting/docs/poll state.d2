@@ -54,7 +54,7 @@ Tallying: {
   label: Tallying
 }
 
-# 2. 终态容器
+# 2. 终态容器（让它们待在底部）
 Final States: {
   label: ""
   style: {stroke-width: 0; fill: transparent}
@@ -70,16 +70,15 @@ Final States: {
   }
 }
 
-# 3. 核心流转 (Happy Path)
-Active -> Tallying: tally_poll()
+# 3. 核心流转 (Happy Path & Loop)
+Active -> Tallying: tally_poll() or schedule
+Tallying -> Final States.Completed: Verify Proof
 
-Tallying -> Final States.Completed: tally(priv_key)
+# 暂停逻辑（双向箭头保持紧凑）
+Active <-> Paused: paused_poll()/active_poll()
+Tallying <-> Paused: paused_poll()/tally_poll()
 
-# 暂停逻辑
-Active <-> Paused: pause_poll()/active_poll()
-Tallying <-> Paused: pause_poll()/tally_poll()
-
-# 4. 终止流程
+# 4. 关键修改：多源到单目标的终止流程
 Active -> Final States.Cancelled: {
   label: cancel_poll()
   style: {
@@ -104,4 +103,5 @@ Tallying -> Final States.Cancelled: {
   }
 }
 
+# 布局微调
 Paused.near: Active

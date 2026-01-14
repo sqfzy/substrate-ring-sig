@@ -54,7 +54,8 @@ polkadot-sdk = { workspace = true, features = [
 	"pallet-utility",
 	"pallet-preimage",
 	"pallet-scheduler",
-  "pallet-collective",
+	"pallet-collective",
+	"pallet-assets",
 ], default-features = false }
 scale-info = { features = ["derive"], workspace = true }
 serde_json = { workspace = true, default-features = false, features = [
@@ -62,7 +63,8 @@ serde_json = { workspace = true, default-features = false, features = [
 ] }
 smallvec = { workspace = true, default-features = true }
 # custom-pallet = { path = "../pallets/custom-pallet", default-features = false }
-ring_sig_voting= { path = "../pallets/ring_sig_voting", default-features = false }
+ring_sig_voting = { path = "../pallets/ring_sig_voting", default-features = false }
+pallet_liquidity_pool = { path = "../pallets/pallet_liquidity_pool", default-features = false }
 
 [features]
 default = ["std"]
@@ -77,14 +79,15 @@ std = [
 	"substrate-wasm-builder",
 	# "custom-pallet/std",
 	"ring_sig_voting/std",
+	"pallet_liquidity_pool/std",
 ]
 
 runtime-benchmarks = [
 	"cumulus-pallet-parachain-system/runtime-benchmarks",
-
 	"pallet-parachain-template/runtime-benchmarks",
 	"polkadot-sdk/runtime-benchmarks",
 	"ring_sig_voting/runtime-benchmarks",
+	"pallet_liquidity_pool/runtime-benchmarks",
 ]
 
 try-runtime = [

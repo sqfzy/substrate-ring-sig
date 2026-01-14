@@ -10,7 +10,7 @@ mod benchmarks {
     use crate::Pallet as RingSigVoting;
     use frame_system::RawOrigin;
 
-    fn get_admin<T: Config>() -> T::AccountId {
+fn get_admin<T: Config>() -> T::AccountId {
         whitelisted_caller()
     }
 
@@ -34,9 +34,9 @@ mod benchmarks {
         let description = POLL_DESCRIPTION.to_vec();
         let metadata = POLL_METADATA.to_vec();
         let deadline = DEADLINE.into();
-
-        // Generate random public key
         let poll_public_key = CompressedRistrettoWrapper::from(RistrettoPoint::random(&mut OsRng));
+
+        let tally_vk = create_dummy_vk();
 
         #[extrinsic_call]
         _(
@@ -46,6 +46,7 @@ mod benchmarks {
             metadata,
             deadline,
             poll_public_key,
+            tally_vk,
         );
 
         assert_eq!(RingSigVoting::<T>::poll_count(), 1);
@@ -56,11 +57,15 @@ mod benchmarks {
         let caller = get_admin::<T>();
 
         let (ephemeral_public_key, ciphertext, challenge, responses, sig_ring, key_image) =
-            create_vote_with_signature::<T>(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT);
+            create_vote_with_signature::<T>(
+                RING_SIZE,
+                SECRET_INDEX,
+                SIMPLE_CIPHERTEXT,
+            );
 
-        RingSigVoting::<T>::register_ring(RawOrigin::Signed(caller.clone()).into(), sig_ring)
-            .unwrap();
+        RingSigVoting::<T>::register_ring(RawOrigin::Signed(caller.clone()).into(), sig_ring).unwrap();
 
+        let tally_vk = create_dummy_vk();
         RingSigVoting::<T>::create_poll(
             RawOrigin::Signed(caller).into(),
             0,
@@ -68,6 +73,7 @@ mod benchmarks {
             POLL_METADATA.to_vec(),
             DEADLINE.into(),
             CompressedRistrettoWrapper::from(RistrettoPoint::random(&mut OsRng)),
+            tally_vk,
         )
         .unwrap();
 
@@ -93,6 +99,7 @@ mod benchmarks {
         let ring = generate_test_ring(RING_SIZE);
         RingSigVoting::<T>::register_ring(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
 
+        let tally_vk = create_dummy_vk();
         RingSigVoting::<T>::create_poll(
             RawOrigin::Signed(caller.clone()).into(),
             0,
@@ -100,6 +107,7 @@ mod benchmarks {
             POLL_METADATA.to_vec(),
             DEADLINE.into(),
             CompressedRistrettoWrapper::from(RistrettoPoint::random(&mut OsRng)),
+            tally_vk,
         )
         .unwrap();
 
@@ -116,6 +124,7 @@ mod benchmarks {
         let ring = generate_test_ring(RING_SIZE);
         RingSigVoting::<T>::register_ring(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
 
+        let tally_vk = create_dummy_vk();
         RingSigVoting::<T>::create_poll(
             RawOrigin::Signed(caller.clone()).into(),
             0,
@@ -123,6 +132,7 @@ mod benchmarks {
             POLL_METADATA.to_vec(),
             DEADLINE.into(),
             CompressedRistrettoWrapper::from(RistrettoPoint::random(&mut OsRng)),
+            tally_vk,
         )
         .unwrap();
 
@@ -139,6 +149,7 @@ mod benchmarks {
         let ring = generate_test_ring(RING_SIZE);
         RingSigVoting::<T>::register_ring(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
 
+        let tally_vk = create_dummy_vk();
         RingSigVoting::<T>::create_poll(
             RawOrigin::Signed(caller.clone()).into(),
             0,
@@ -146,6 +157,7 @@ mod benchmarks {
             POLL_METADATA.to_vec(),
             DEADLINE.into(),
             CompressedRistrettoWrapper::from(RistrettoPoint::random(&mut OsRng)),
+            tally_vk,
         )
         .unwrap();
 
@@ -162,6 +174,7 @@ mod benchmarks {
         let ring = generate_test_ring(RING_SIZE);
         RingSigVoting::<T>::register_ring(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
 
+        let tally_vk = create_dummy_vk();
         RingSigVoting::<T>::create_poll(
             RawOrigin::Signed(caller.clone()).into(),
             0,
@@ -169,6 +182,7 @@ mod benchmarks {
             POLL_METADATA.to_vec(),
             DEADLINE.into(),
             CompressedRistrettoWrapper::from(RistrettoPoint::random(&mut OsRng)),
+            tally_vk,
         )
         .unwrap();
 
@@ -187,42 +201,29 @@ mod benchmarks {
         let ring = generate_test_ring(RING_SIZE);
         RingSigVoting::<T>::register_ring(RawOrigin::Signed(caller.clone()).into(), ring).unwrap();
 
-        // 1. Generate valid key pair
-        let mut rng = OsRng;
-        let private_key = Scalar::random(&mut rng);
-        let public_key = RistrettoPoint::mul_base(&private_key);
-
-        let poll_public_key = CompressedRistrettoWrapper::from(public_key);
-        let poll_private_key = ScalarWrapper::from(private_key);
-
-        // 2. Create Poll
+        let tally_vk = create_dummy_vk();
         RingSigVoting::<T>::create_poll(
             RawOrigin::Signed(caller.clone()).into(),
             0,
             POLL_DESCRIPTION.to_vec(),
             POLL_METADATA.to_vec(),
             DEADLINE.into(),
-            poll_public_key,
+            CompressedRistrettoWrapper::from(RistrettoPoint::random(&mut OsRng)),
+            tally_vk,
         )
         .unwrap();
 
-        // 3. Transition to Tallying
         RingSigVoting::<T>::tally_poll(RawOrigin::Signed(caller.clone()).into(), 0).unwrap();
 
         let tally_result = 42u32;
+        let proof = create_dummy_proof();
 
         #[extrinsic_call]
-        _(
-            RawOrigin::Signed(caller),
-            0,
-            tally_result,
-            poll_private_key.clone(),
-        );
+        _(RawOrigin::Signed(caller), 0, tally_result, proof);
 
         let poll = RingSigVoting::<T>::polls(0).unwrap();
         assert_eq!(poll.status, PollStatus::Completed);
         assert_eq!(poll.tally, Some(tally_result));
-        assert_eq!(poll.poll_private_key, Some(poll_private_key));
     }
 
     impl_benchmark_test_suite!(

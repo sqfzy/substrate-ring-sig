@@ -1,3 +1,9 @@
+use ark_bls12_381::{Bls12_381, Fr};
+use ark_ff::Field;
+use ark_marlin::{Marlin, Proof, IndexVerifierKey};
+use ark_poly_commit::marlin_pc::MarlinKZG10;
+use ark_poly::univariate::DensePolynomial;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use codec::{Decode, DecodeWithMemTracking, Encode, EncodeLike, MaxEncodedLen};
 use curve25519_dalek::{
     ristretto::{CompressedRistretto, RistrettoPoint},
@@ -10,10 +16,15 @@ use frame::traits::schedule::{
 };
 use nazgul::blsag::BLSAG;
 use scale_info::prelude::vec::Vec;
+use blake2::{Blake2s, Digest};
 
 pub type PollId = u32;
 pub type RingId = u32;
 pub type Tally = u32;
+
+
+pub type MarlinPC = MarlinKZG10<Bls12_381, DensePolynomial<Fr>>;
+pub type MarlinInst = Marlin<Fr, MarlinPC, Blake2s>;
 
 /// Wrapper for CompressedRistretto to make it compatible with Substrate storage
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -240,9 +251,9 @@ impl<MaxRingSize: Get<u32>> From<BLSAGWrapper<MaxRingSize>> for BLSAG {
 pub enum PollStatus {
     /// Active status, voting is allowed
     Active,
-    /// Tallying status, voting is not allowed (Waiting for Reveal)
+    /// Tallying status, voting is not allowed
     Tallying,
-    /// Completed (Revealed)
+    /// Completed
     Completed,
     /// Paused
     Paused,
@@ -261,16 +272,8 @@ pub struct Poll<T: crate::Config> {
     pub description: BoundedVec<u8, T::MaxDescriptionLength>,
     pub metadata_hash: <T::Hashing as Hash>::Output,
     pub deadline: BlockNumberFor<T>,
-
-    /// Public key for vote encryption
     pub poll_public_key: CompressedRistrettoWrapper,
-
-    /// [Changed] Private key revealed by admin after tallying
-    pub poll_private_key: Option<ScalarWrapper>,
-
-    /// [Changed] Tally result revealed by admin
     pub tally: Option<Tally>,
-
     pub status: PollStatus,
 }
 
@@ -299,7 +302,6 @@ impl<T: crate::Config> Poll<T> {
             metadata_hash,
             deadline,
             poll_public_key,
-            poll_private_key: None, // Initially None
             tally: None,
             status: PollStatus::Active,
         })
@@ -409,6 +411,240 @@ fn task_name(poll_id: u32) -> TaskName {
     TaskName::from(name)
 }
 
+/// Wrapper for Marlin Proof
+// #[derive(Clone, Debug, PartialEq)]
+pub struct ProofWrapper(pub Proof<Fr, MarlinPC>);
+
+impl Clone for ProofWrapper {
+    fn clone(&self) -> Self {
+        let bytes = self.encode();
+        ProofWrapper::decode(&mut bytes.as_slice()).expect("Decoding should succeed")
+    }
+}
+
+impl core::fmt::Debug for ProofWrapper {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:?}", self.encode())
+    }
+}
+
+impl PartialEq for ProofWrapper {
+    fn eq(&self, other: &Self) -> bool {
+        self.encode() == other.encode()
+    }
+}
+
+impl Encode for ProofWrapper {
+    fn size_hint(&self) -> usize {
+        // Marlin proof is larger than Groth16, approx 1KB+
+        2048
+    }
+
+    fn encode_to<T: codec::Output + ?Sized>(&self, dest: &mut T) {
+        let mut bytes = Vec::with_capacity(self.size_hint());
+        self.0
+            .serialize(&mut bytes)
+            .expect("Proof serialization should not fail");
+        bytes.encode_to(dest);
+    }
+}
+
+impl EncodeLike for ProofWrapper {}
+
+impl Decode for ProofWrapper {
+    fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
+        let bytes: Vec<u8> = Vec::decode(input)?;
+        let proof = Proof::<Fr, MarlinPC>::deserialize(&bytes[..])
+            .map_err(|_| codec::Error::from("Failed to deserialize proof"))?;
+        Ok(Self(proof))
+    }
+}
+
+impl DecodeWithMemTracking for ProofWrapper {}
+
+impl MaxEncodedLen for ProofWrapper {
+    fn max_encoded_len() -> usize {
+        // Updated for Marlin proof size (Estimated upper bound)
+        codec::Compact(2048u32).encoded_size() + 2048
+    }
+}
+
+impl scale_info::TypeInfo for ProofWrapper {
+    type Identity = Self;
+
+    fn type_info() -> scale_info::Type {
+        scale_info::Type::builder()
+            .path(scale_info::Path::new("ProofWrapper", module_path!()))
+            .composite(
+                scale_info::build::Fields::unnamed()
+                    .field(|f| f.ty::<Vec<u8>>().type_name("Proof<Fr, MarlinPC>")),
+            )
+    }
+}
+
+impl From<Proof<Fr, MarlinPC>> for ProofWrapper {
+    fn from(proof: Proof<Fr, MarlinPC>) -> Self {
+        Self(proof)
+    }
+}
+
+impl From<ProofWrapper> for Proof<Fr, MarlinPC> {
+    fn from(wrapper: ProofWrapper) -> Self {
+        wrapper.0
+    }
+}
+
+impl AsRef<Proof<Fr, MarlinPC>> for ProofWrapper {
+    fn as_ref(&self) -> &Proof<Fr, MarlinPC> {
+        &self.0
+    }
+}
+
+impl core::ops::Deref for ProofWrapper {
+    type Target = Proof<Fr, MarlinPC>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Wrapper for Marlin Index Verifier Key
+// #[derive(Clone, Debug, PartialEq)]
+pub struct VkWrapper(pub IndexVerifierKey<Fr, MarlinPC>);
+
+impl Clone for VkWrapper {
+    fn clone(&self) -> Self {
+        let bytes = self.encode();
+        VkWrapper::decode(&mut bytes.as_slice()).expect("Decoding should succeed")
+    }
+}
+
+impl core::fmt::Debug for VkWrapper {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:?}", self.encode())
+    }
+}
+
+impl PartialEq for VkWrapper {
+    fn eq(&self, other: &Self) -> bool {
+        self.encode() == other.encode()
+    }
+}
+impl Eq for VkWrapper {}
+
+impl Encode for VkWrapper {
+    fn size_hint(&self) -> usize {
+        2048
+    }
+
+    fn encode_to<T: codec::Output + ?Sized>(&self, dest: &mut T) {
+        let mut bytes = Vec::new();
+        self.0
+            .serialize(&mut bytes)
+            .expect("VK serialization should not fail");
+        bytes.encode_to(dest);
+    }
+}
+
+impl EncodeLike for VkWrapper {}
+
+impl Decode for VkWrapper {
+    fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
+        let bytes: Vec<u8> = Vec::decode(input)?;
+        let vk = IndexVerifierKey::<Fr, MarlinPC>::deserialize(&bytes[..])
+            .map_err(|_| codec::Error::from("Failed to deserialize verification key"))?;
+        Ok(Self(vk))
+    }
+}
+
+impl DecodeWithMemTracking for VkWrapper {}
+
+impl MaxEncodedLen for VkWrapper {
+    fn max_encoded_len() -> usize {
+        // Updated for Marlin VK size
+        codec::Compact(2048u32).encoded_size() + 2048
+    }
+}
+
+impl scale_info::TypeInfo for VkWrapper {
+    type Identity = Self;
+
+    fn type_info() -> scale_info::Type {
+        scale_info::Type::builder()
+            .path(scale_info::Path::new("VkWrapper", module_path!()))
+            .composite(
+                scale_info::build::Fields::unnamed()
+                    .field(|f| f.ty::<Vec<u8>>().type_name("IndexVerifierKey<Fr, MarlinPC>")),
+            )
+    }
+}
+
+impl From<IndexVerifierKey<Fr, MarlinPC>> for VkWrapper {
+    fn from(vk: IndexVerifierKey<Fr, MarlinPC>) -> Self {
+        Self(vk)
+    }
+}
+
+impl From<VkWrapper> for IndexVerifierKey<Fr, MarlinPC> {
+    fn from(wrapper: VkWrapper) -> Self {
+        wrapper.0
+    }
+}
+
+impl AsRef<IndexVerifierKey<Fr, MarlinPC>> for VkWrapper {
+    fn as_ref(&self) -> &IndexVerifierKey<Fr, MarlinPC> {
+        &self.0
+    }
+}
+
+impl core::ops::Deref for VkWrapper {
+    type Target = IndexVerifierKey<Fr, MarlinPC>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Public inputs for zero-knowledge proof
+#[derive(Clone, Encode, Decode, TypeInfo, PartialEq, Eq, MaxEncodedLen, RuntimeDebug)]
+pub struct PublicInputs {
+    pub poll_id: u32,
+    /// Hash of all encrypted votes (commitment)
+    pub encrypted_votes_hash: H256,
+    /// Tally result
+    pub tally: Tally,
+}
+
+impl From<PublicInputs> for Vec<Fr> {
+    fn from(inputs: PublicInputs) -> Vec<Fr> {
+        let mut elements = Vec::new();
+
+        // Add poll_id
+        elements.push(Fr::from(inputs.poll_id));
+
+        // Add encrypted_votes_hash (split into field elements)
+        // H256 = 256 bits
+        // Fr = 248 bits
+        //
+        // Chunk 1 (31 bytes / 248 bits)       Chunk 2 (1 byte)
+        // [-----------------------------]     [-]
+        //              ↓                       ↓
+        //          Fr 元素 1                Fr 元素 2
+        let hash_bytes = inputs.encrypted_votes_hash.0;
+        for chunk in hash_bytes.chunks(31) {
+            let mut bytes = [0u8; 32];
+            bytes[..chunk.len()].copy_from_slice(chunk);
+            if let Some(fe) = Fr::from_random_bytes(&bytes) {
+                elements.push(fe);
+            }
+        }
+
+        elements.push(Fr::from(inputs.tally));
+
+        elements
+    }
+}
+
 /// Encrypted vote structure
 /// aad = genesis_hash || poll_id || key_image
 /// nonce = [0;32]
@@ -426,4 +662,14 @@ impl<MaxCiphertextLength: Get<u32>> EncryptedVote<MaxCiphertextLength> {
         bytes.extend_from_slice(&self.ciphertext);
         bytes
     }
+}
+
+pub struct HashWriter<'a>(pub &'a mut Blake2s);
+
+impl<'a> ark_std::io::Write for HashWriter<'a> {
+    fn write(&mut self, buf: &[u8]) -> ark_std::io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> ark_std::io::Result<()> { Ok(()) }
 }

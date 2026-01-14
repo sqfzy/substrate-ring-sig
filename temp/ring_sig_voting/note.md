@@ -91,26 +91,19 @@ StorageMap<
 # benchmarking
 1. `pallets/ring_sig_voting/Cargo.toml`
 ```toml
-[features]
 runtime-benchmarks = ["frame/runtime-benchmarks"]
 ```
-2. `pallets/ring_sig_voting/Cargo.toml`
-```toml
-runtime-benchmarks = [
-	"ring_sig_voting/runtime-benchmarks",
-]
-```
-3. `runtime/src/benchmarks.rs`
+2. `runtime/src/benchmarks.rs`
 ```rust
 polkadot_sdk::frame_benchmarking::define_benchmarks!(
     // ...
     [ring_sig_voting, RingSigVoting]
 );
 ```
-4. `touch pallets/ring_sig_voting/src/weights.rs`
-5. `cargo build --features runtime-benchmarks --release`
-6. `frame-omni-bencher v1 benchmark pallet --runtime ./target/release/wbuild/parachain-template-runtime/parachain_template_runtime.wasm --pallet "ring_sig_voting" --extrinsic "" --template ./pallets/ring_sig_voting/frame-weight-template.hbs --output ./pallets/ring_sig_voting/src/weights.rs`
-7. `weights.rs`加上：
+3. `touch pallets/ring_sig_voting/src/weights.rs`
+4. `cargo build --features runtime-benchmarks --release`
+5. `frame-omni-bencher v1 benchmark pallet --runtime ./target/release/wbuild/parachain-template-runtime/parachain_template_runtime.wasm --pallet "ring_sig_voting" --extrinsic "" --template ./pallets/ring_sig_voting/frame-weight-template.hbs --output ./pallets/ring_sig_voting/src/weights.rs`
+6. `weights.rs`加上：
 ```rust
 use frame::deps::frame_support;
 use frame::deps::frame_system;

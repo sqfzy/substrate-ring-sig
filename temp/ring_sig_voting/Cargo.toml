@@ -40,7 +40,7 @@ ark-marlin = { version = "0.3", default-features = false }
 ark-poly = { version = "0.3", default-features = false }
 ark-poly-commit = { version = "0.3", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
-blake2 = { version = "0.10", default-features = false }
+blake2 = { version = "0.9", default-features = false }
 
 [dev-dependencies]
 polkadot-sdk = { workspace = true, default-features = false, features = [

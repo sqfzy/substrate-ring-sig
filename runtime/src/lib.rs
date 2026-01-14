@@ -281,9 +281,14 @@ mod runtime {
 
     // #[runtime::pallet_index(54)]
     // pub type Collective = pallet_collective;
+    #[runtime::pallet_index(54)]
+    pub type Assets = pallet_assets;
 
     #[runtime::pallet_index(55)]
     pub type RingSigVoting = ring_sig_voting;
+
+    #[runtime::pallet_index(56)]
+    pub type LiquidityPool = pallet_liquidity_pool;
 
     #[runtime::pallet_index(0)]
     pub type System = frame_system;

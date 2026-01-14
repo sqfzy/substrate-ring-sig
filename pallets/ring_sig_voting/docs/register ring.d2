@@ -1,0 +1,122 @@
+direction: down
+vars: {
+  d2-config: {
+    layout-engine: dagre
+  }
+}
+
+# --- 统一样式定义 ---
+classes: {
+  extrinsic: {
+    shape: parallelogram
+    style: {
+      fill: "#e3f2fd"
+      stroke: "#1565c0"
+      stroke-width: 2
+      font-size: 14
+    }
+  }
+  logic: {
+    shape: diamond
+    style: {
+      fill: "#fff3e0"
+      stroke: "#ef6c00"
+    }
+  }
+  process: {
+    shape: rectangle
+    style: {
+      fill: "#f3e5f5"
+      stroke: "#7b1fa2"
+      border-radius: 4
+    }
+  }
+  storage: {
+    shape: cylinder
+    style: {
+      fill: "#e0f2f1"
+      stroke: "#00695c"
+      shadow: true
+    }
+  }
+  success: {
+    shape: circle
+    style: {
+      fill: "#c8e6c9"
+      stroke: "#2e7d32"
+      font-size: 16
+    }
+  }
+  error: {
+    shape: hexagon
+    style: {
+      fill: "#ffebee"
+      stroke: "#c62828"
+      font-size: 12
+    }
+  }
+}
+
+# --- 节点定义 ---
+
+# 1. 输入
+Input: 收到交易 register_ring() {
+  class: extrinsic
+  label: "Extrinsic: register_ring\n(origin, ring)"
+}
+
+# 2. 检查
+CheckAdmin: 权限检查 {
+  class: logic
+  label: "ensure_admin(origin)?"
+}
+
+CheckSize: 环大小检查 {
+  class: logic
+  label: "ring.len() <= Max?"
+  tooltip: "检查提交的公钥数量是否超过系统限制"
+}
+
+# 3. 处理与存储
+GetID: 获取 Ring ID {
+  class: storage
+  label: "Read: RingCount"
+}
+
+StoreRing: 存储 Ring {
+  class: storage
+  label: "Insert: Rings\n(id, ring)"
+}
+
+IncID: 更新计数器 {
+  class: storage
+  label: "Update: RingCount\n(id + 1)"
+}
+
+EmitEvent: 发送事件 {
+  class: process
+  label: "Event: RingRegistered"
+}
+
+EndOK: 流程结束 {
+  class: success
+  label: "Success"
+}
+
+# 错误节点
+ErrPerm: Error: BadOrigin {class: error}
+ErrSize: Error: RingTooLarge {class: error}
+
+# --- 连线逻辑 ---
+
+Input -> CheckAdmin
+CheckAdmin -> CheckSize: "Yes"
+CheckAdmin -> ErrPerm: "No"
+
+CheckSize -> GetID: "Valid"
+CheckSize -> ErrSize: "Too Large"
+
+GetID -> StoreRing
+StoreRing -> IncID
+IncID -> EmitEvent
+EmitEvent -> EndOK
