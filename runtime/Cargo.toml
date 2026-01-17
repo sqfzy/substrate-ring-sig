@@ -56,6 +56,7 @@ polkadot-sdk = { workspace = true, features = [
 	"pallet-scheduler",
 	"pallet-collective",
 	"pallet-assets",
+	"pallet-membership",
 ], default-features = false }
 scale-info = { features = ["derive"], workspace = true }
 serde_json = { workspace = true, default-features = false, features = [

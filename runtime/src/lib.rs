@@ -284,10 +284,13 @@ mod runtime {
     #[runtime::pallet_index(54)]
     pub type Assets = pallet_assets;
 
-    #[runtime::pallet_index(55)]
-    pub type RingSigVoting = ring_sig_voting;
+    // #[runtime::pallet_index(55)]
+    // pub type Teachers = pallet_membership::Instance1;
 
     #[runtime::pallet_index(56)]
+    pub type RingSigVoting = ring_sig_voting;
+
+    #[runtime::pallet_index(57)]
     pub type LiquidityPool = pallet_liquidity_pool;
 
     #[runtime::pallet_index(0)]

@@ -31,7 +31,7 @@ pub mod pallet {
     use super::*;
     use frame::prelude::*;
     use frame::traits::{
-        fungibles::{Inspect, Mutate, Create},
+        fungibles::{Create, Inspect, Mutate},
         tokens::Preservation,
         AccountIdConversion, AtLeast32BitUnsigned, CheckedAdd, CheckedSub, One, Zero,
     };
@@ -719,7 +719,6 @@ pub mod pallet {
 
                 Pools::<T>::insert(pool_id, pool);
 
-
                 <T::Assets as Mutate<T::AccountId>>::transfer(
                     path[i],
                     &from,
@@ -734,7 +733,6 @@ pub mod pallet {
                     amount_out,
                     Preservation::Expendable,
                 )?;
-
             }
 
             Ok(())

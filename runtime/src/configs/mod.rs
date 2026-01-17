@@ -380,10 +380,6 @@ impl pallet_scheduler::Config for Runtime {
     type BlockNumberProvider = frame_system::Pallet<Runtime>;
 }
 
-parameter_types! {
-    pub const TallyVkBytes: &'static [u8] = include_bytes!("../../../srs12.bin");
-}
-
 impl ring_sig_voting::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -397,6 +393,7 @@ impl ring_sig_voting::Config for Runtime {
     type AdminOrigin = frame_system::EnsureRoot<AccountId>;
     #[cfg(feature = "runtime-benchmarks")]
     type AdminOrigin = frame_system::EnsureSigned<AccountId>;
+    type WeightInfo = ();
 }
 
 parameter_types! {

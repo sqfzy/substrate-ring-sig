@@ -9,6 +9,7 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+mod weights;
 pub mod types;
 
 pub use pallet::*;
@@ -18,8 +19,9 @@ pub use types::*;
 pub mod pallet {
     use super::*;
     use frame::prelude::*;
-    use frame::traits::{schedule, QueryPreimage, StorePreimage};
+    use frame::traits::{schedule, QueryPreimage, StorePreimage, ValidateUnsigned };
     use scale_info::prelude::vec::Vec;
+    use weights::WeightInfo;
 
     use curve25519_dalek::ristretto::RistrettoPoint;
     use nazgul::blsag::BLSAG;
@@ -72,6 +74,8 @@ pub mod pallet {
 
         /// Admin origin for privileged operations
         type AdminOrigin: EnsureOrigin<Self::RuntimeOrigin>;
+
+        type WeightInfo: weights::WeightInfo;
     }
 
     /// Storage for ring signature groups
@@ -101,11 +105,18 @@ pub mod pallet {
         ValueQuery,
     >;
 
-    /// Storage for used key images to prevent double voting
+    /// 记录已使用的密钥镜像 (Key Image)
+    /// Key1: PollId, Key2: KeyImage -> Value: ()
     #[pallet::storage]
-    #[pallet::getter(fn used_key_images)]
-    pub type UsedKeyImages<T: Config> =
-        StorageMap<_, Blake2_128Concat, CompressedRistrettoWrapper, (), OptionQuery>;
+    pub type UsedKeyImages<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        u32, // PollId
+        Blake2_128Concat,
+        CompressedRistrettoWrapper, // Key Image
+        (),
+        OptionQuery,
+    >;
 
     /// Poll counter
     #[pallet::storage]
@@ -116,6 +127,12 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn ring_count)]
     pub type RingCount<T: Config> = StorageValue<_, u32, ValueQuery>;
+
+    /// 认证为老师的账户
+    /// Key: AccountId, Value: ()
+    #[pallet::storage]
+    #[pallet::getter(fn teachers)]
+    pub type Teachers<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, (), OptionQuery>;
 
     /// Events
     #[pallet::event]
@@ -136,15 +153,25 @@ pub mod pallet {
         /// A poll is been tallying
         PollTallying { poll_id: PollId },
         /// A poll has been cancelled
-        PollCancelled { poll_id: PollId },
+        PollCancelled { poll_id: PollId, reason: Vec<u8> },
         /// A poll has been paused
-        PollPaused { poll_id: PollId },
+        PollPaused { poll_id: PollId, reason: Vec<u8> },
         /// A poll has been actived
         PollActive { poll_id: PollId },
         /// A poll deadline has been updated
         PollDeadlineUpdated {
             poll_id: PollId,
             new_deadline: BlockNumberFor<T>,
+        },
+        /// 被授权创建投票
+        TeacherAuthorized { who: T::AccountId },
+        /// 被取消授权
+        TeacherRevoked { who: T::AccountId },
+        /// 投票所有权已转移
+        PollOwnershipTransferred {
+            poll_id: PollId,
+            from: T::AccountId,
+            to: T::AccountId,
         },
     }
 
@@ -177,15 +204,22 @@ pub mod pallet {
         Overflow,
         /// Call is too large to be scheduled inline
         CallTooLarge,
+        /// 账户未被授权进行此操作
+        NotAuthorized,
     }
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         /// Register a ring signature group
+        ///
+        /// *输入构造*：
+        ///
+        /// 用户需要使用 `curve25519-dalek` 生成公钥。
         #[pallet::call_index(0)]
         #[pallet::weight(10_000 + (ring.len() as u64) * 1_000)]
         pub fn register_ring(
             origin: OriginFor<T>,
+            // 包含多个 32 字节公钥的向量。
             ring: Vec<CompressedRistrettoWrapper>,
         ) -> DispatchResult {
             T::AdminOrigin::ensure_origin(origin)?;
@@ -204,18 +238,23 @@ pub mod pallet {
         }
 
         /// Create a new poll
-        /// [Changed] Removed `tally_vk`
+        ///
+        /// 初始化一个投票场次，规定谁能投（ring_id）、什么时候截止（deadline）以及加密选票用的公钥。
         #[pallet::call_index(1)]
         #[pallet::weight(50_000)]
         pub fn create_poll(
             origin: OriginFor<T>,
             ring_id: RingId,
             description: Vec<u8>,
+            // 投票说明的原始字节，链上会通过 Preimage 模块计算其哈希以节省空间。
             metadata: Vec<u8>,
             deadline: BlockNumberFor<T>,
+            // 这是管理员生成的临时公钥，用户需用它加密选票。
             poll_public_key: CompressedRistrettoWrapper,
         ) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+            let who = ensure_signed(origin)?;
+            ensure!(Teachers::<T>::contains_key(&who), Error::<T>::NotAuthorized);
+
             ensure!(Rings::<T>::contains_key(ring_id), Error::<T>::RingNotFound);
 
             let bounded_description: BoundedVec<u8, T::MaxDescriptionLength> = description
@@ -228,9 +267,11 @@ pub mod pallet {
             let metadata_hash =
                 T::Preimages::note(scale_info::prelude::borrow::Cow::Borrowed(&metadata))?;
 
+            // 内部包含自动调度逻辑：到达 deadline 时自动触发状态切换。
             let poll = Poll::new(
                 poll_id,
                 ring_id,
+                who,
                 bounded_description,
                 metadata_hash,
                 deadline,
@@ -245,6 +286,17 @@ pub mod pallet {
         }
 
         /// Submit a vote
+        ///
+        /// 同时验证身份（环签名）和唯一性（Key Image）。
+        ///
+        /// *输入构造*：
+        ///
+        /// 用户需在链下完成以下步骤：
+        /// 1. 生成随机临时公钥 `ephemeral_public_key`。
+        /// 2. 使用 `poll_public_key` 对选票进行 ECIES 加密，得到 `ciphertext`。
+        /// 3. 构造待签名消息为 `message = ephemeral_public_key || ciphertext`。
+        /// 4. 使用自己的私钥 + 整个 Ring 的公钥列表，通过 `nazgul` 生成 BLSAG 签名（得到 `challenge`, `responses`, `key_image`）。
+        /// 5. 其中 AAD 绑定：`aad = genesis_hash || poll_id || key_image` 以防重放攻击。
         #[pallet::call_index(2)]
         #[pallet::weight(100_000 + (responses.len() as u64) * 5_000)]
         pub fn vote(
@@ -256,11 +308,18 @@ pub mod pallet {
             responses: Vec<ScalarWrapper>,
             key_image: CompressedRistrettoWrapper,
         ) -> DispatchResult {
-            ensure_signed(origin)?;
+            ensure_none(origin)?;
 
             let mut poll = Polls::<T>::get(poll_id).ok_or(Error::<T>::PollNotFound)?;
             let status = poll.get_status();
             ensure!(status == PollStatus::Active, Error::<T>::InvalidPollStatus);
+
+
+            ensure!(
+                !UsedKeyImages::<T>::contains_key(poll_id, &key_image),
+                Error::<T>::KeyImageAlreadyUsed
+            );
+
 
             let ring = Rings::<T>::get(poll.ring_id).ok_or(Error::<T>::RingNotFound)?;
 
@@ -272,8 +331,10 @@ pub mod pallet {
             let encrypted_vote = EncryptedVote {
                 ephemeral_public_key,
                 ciphertext: bounded_ciphertext,
+                key_image: key_image.clone(),
             };
 
+            // 为了确保 ciphertext 能被 ephemeral_private_key 解密，签名消息需要包含 ephemeral_public_key。
             let message = encrypted_vote.to_bytes();
 
             let blsag_wrapper = BLSAGWrapper::<T::MaxRingSize> {
@@ -286,12 +347,7 @@ pub mod pallet {
             let is_valid = BLSAG::verify::<blake2::Blake2b512>(blsag_wrapper.into(), &message);
             ensure!(is_valid, Error::<T>::InvalidSignature);
 
-            ensure!(
-                !UsedKeyImages::<T>::contains_key(&key_image),
-                Error::<T>::KeyImageAlreadyUsed
-            );
-
-            UsedKeyImages::<T>::insert(&key_image, ());
+            UsedKeyImages::<T>::insert(poll_id, &key_image, ());
             let vote_index =
                 EncryptedVotes::<T>::try_mutate(poll_id, |votes| -> Result<u32, DispatchError> {
                     votes
@@ -309,6 +365,8 @@ pub mod pallet {
         }
 
         /// Reveal the poll outcome
+        ///
+        /// 投票结束后，管理员（或持有私钥的人）公布私钥和统计结果。
         #[pallet::call_index(3)]
         #[pallet::weight(50_000)]
         pub fn tally(
@@ -330,6 +388,7 @@ pub mod pallet {
             // --- Core Security Check ---
             // Verify if Private Key matches Public Key
             // Derived_Pub = Private_Key * G
+            // 简单验证私钥是否对应于之前存储的公钥
             let derived_pub = RistrettoPoint::mul_base(&private_key.0);
             let stored_pub: RistrettoPoint = poll.poll_public_key.clone().into();
 
@@ -357,7 +416,7 @@ pub mod pallet {
         #[pallet::call_index(4)]
         #[pallet::weight(10_000)]
         pub fn tally_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+            T::AdminOrigin::ensure_origin(origin.clone())?;
 
             Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
                 let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
@@ -375,32 +434,40 @@ pub mod pallet {
         /// Cancel a poll
         #[pallet::call_index(5)]
         #[pallet::weight(10_000)]
-        pub fn cancel_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+        pub fn cancel_poll(origin: OriginFor<T>, poll_id: u32, reason: Vec<u8>) -> DispatchResult {
+            let who = ensure_signed(origin.clone())?;
 
             Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
                 let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
+                ensure!(
+                    who == poll.owner || T::AdminOrigin::ensure_origin(origin).is_ok(),
+                    Error::<T>::NoPermission
+                );
                 poll.set_status(PollStatus::Cancelled)?;
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::PollCancelled { poll_id });
+            Self::deposit_event(Event::PollCancelled { poll_id, reason });
             Ok(())
         }
 
         /// Pause a poll
         #[pallet::call_index(6)]
         #[pallet::weight(10_000)]
-        pub fn pause_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+        pub fn pause_poll(origin: OriginFor<T>, poll_id: u32, reason: Vec<u8>) -> DispatchResult {
+            let who = ensure_signed(origin.clone())?;
 
             Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
                 let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
+                ensure!(
+                    who == poll.owner || T::AdminOrigin::ensure_origin(origin).is_ok(),
+                    Error::<T>::NoPermission
+                );
                 poll.set_status(PollStatus::Paused)?;
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::PollPaused { poll_id });
+            Self::deposit_event(Event::PollPaused { poll_id, reason });
             Ok(())
         }
 
@@ -408,10 +475,14 @@ pub mod pallet {
         #[pallet::call_index(7)]
         #[pallet::weight(10_000)]
         pub fn active_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+            let who = ensure_signed(origin.clone())?;
 
             Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
                 let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
+                ensure!(
+                    who == poll.owner || T::AdminOrigin::ensure_origin(origin).is_ok(),
+                    Error::<T>::NoPermission
+                );
                 poll.set_status(PollStatus::Active)?;
                 Ok(())
             })?;
@@ -428,10 +499,14 @@ pub mod pallet {
             poll_id: u32,
             new_deadline: BlockNumberFor<T>,
         ) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+            let who = ensure_signed(origin.clone())?;
 
             Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
                 let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
+                ensure!(
+                    who == poll.owner || T::AdminOrigin::ensure_origin(origin).is_ok(),
+                    Error::<T>::NoPermission
+                );
                 poll.set_deadline(new_deadline)?;
                 Ok(())
             })?;
@@ -441,6 +516,158 @@ pub mod pallet {
                 new_deadline,
             });
             Ok(())
+        }
+
+        /// 授权给某个账户（老师）创建投票的权限
+        #[pallet::call_index(9)]
+        #[pallet::weight(10_000)]
+        pub fn authorize_teacher(origin: OriginFor<T>, who: T::AccountId) -> DispatchResult {
+            // 1. 只有最高管理员可以执行授权操作
+            T::AdminOrigin::ensure_origin(origin)?;
+
+            // 2. 检查是否已经授权，避免重复写入
+            if Teachers::<T>::contains_key(&who) {
+                return Ok(());
+            }
+
+            // 3. 写入存储
+            Teachers::<T>::insert(&who, ());
+
+            // 4. 发出事件
+            Self::deposit_event(Event::TeacherAuthorized { who });
+            Ok(())
+        }
+
+        /// 撤销某个账户（老师）的权限
+        #[pallet::call_index(10)]
+        #[pallet::weight(10_000)]
+        pub fn revoke_teacher(origin: OriginFor<T>, who: T::AccountId) -> DispatchResult {
+            // 1. 只有最高管理员可以执行撤销操作
+            T::AdminOrigin::ensure_origin(origin)?;
+
+            // 2. 检查是否存在
+            if !Teachers::<T>::contains_key(&who) {
+                return Err(Error::<T>::NotAuthorized.into());
+            }
+
+            // 3. 移除存储
+            Teachers::<T>::remove(&who);
+
+            // 4. 发出事件
+            Self::deposit_event(Event::TeacherRevoked { who });
+            Ok(())
+        }
+
+        /// 更改所有权
+        /// 场景：紧急接管、账号丢失恢复、恶意老师处理
+        #[pallet::call_index(31)]
+        #[pallet::weight(10_000)]
+        pub fn change_owner(
+            origin: OriginFor<T>,
+            poll_id: PollId,
+            new_owner: T::AccountId,
+        ) -> DispatchResult {
+            // 1. 只有最高管理员可调用
+            T::AdminOrigin::ensure_origin(origin)?;
+
+            Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
+                let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
+
+                let old_owner = poll.owner.clone();
+
+                // 2. 强制覆盖 Owner
+                poll.owner = new_owner.clone();
+
+                Self::deposit_event(Event::PollOwnershipTransferred {
+                    poll_id,
+                    from: old_owner,
+                    to: new_owner,
+                });
+                Ok(())
+            })
+        }
+    }
+
+    #[pallet::validate_unsigned]
+    impl<T: Config> ValidateUnsigned for Pallet<T> {
+        type Call = Call<T>;
+
+        /// 在交易进入内存池前执行。
+        /// 这里的代码运行在每一个节点上，用于拦截垃圾交易。
+        fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {
+            // 1. 模式匹配：只拦截 vote 调用
+            if let Call::vote { 
+                poll_id, 
+                ephemeral_public_key, 
+                ciphertext, 
+                challenge, 
+                responses, 
+                key_image 
+            } = call {
+                
+                // 2. 数据准备 (读取 Storage)
+                // 注意：在 validate_unsigned 中读存储是允许的，但要尽量快
+                let mut poll = Polls::<T>::get(poll_id).ok_or(InvalidTransaction::Call)?;
+                let status = poll.get_status();
+                if status != PollStatus::Active {
+                    return InvalidTransaction::Call.into();
+                }
+
+                // 检查双花 (Key Image) - 这是最重要的防 DDoS 检查！
+                if UsedKeyImages::<T>::contains_key(poll_id, key_image) {
+                    return InvalidTransaction::Stale.into(); // Stale 表示已过期/已存在
+                }
+
+                // 3. 密码学验证 (Ring Signature)
+                let Some(ring) = Rings::<T>::get(poll.ring_id) else {
+                    return InvalidTransaction::Call.into(); 
+                };
+
+                // 构造数据结构进行验证
+                let bounded_ciphertext = BoundedVec::<u8, T::MaxCiphertextLength>::try_from(ciphertext.clone())
+                    .map_err(|_| InvalidTransaction::Call)?;
+
+                let encrypted_vote = EncryptedVote {
+                    ephemeral_public_key: ephemeral_public_key.clone(),
+                    ciphertext: bounded_ciphertext,
+                    key_image: key_image.clone(),
+                };
+                let message = encrypted_vote.to_bytes();
+
+                // 转换 responses
+                let bounded_responses: BoundedVec<ScalarWrapper, T::MaxRingSize> = 
+                    responses.clone().try_into().map_err(|_| InvalidTransaction::Call)?;
+
+                let blsag_wrapper = BLSAGWrapper::<T::MaxRingSize> {
+                    challenge: challenge.clone(),
+                    responses: bounded_responses,
+                    ring: ring,
+                    key_image: key_image.clone(),
+                };
+
+                // 执行验证
+                let is_valid = BLSAG::verify::<blake2::Blake2b512>(blsag_wrapper.into(), &message);
+
+                if !is_valid {
+                    return InvalidTransaction::BadProof.into(); // 签名错误，踢出
+                }
+
+                // 4. 返回通过凭证
+                ValidTransaction::with_tag_prefix("RingSigVoting")
+                    // Priority: 优先级。我们可以给高一点。
+                    .priority(T::WeightInfo::vote().ref_time() as u64)
+                    // Requires: 依赖关系。这里暂无。
+                    // Provides: 这笔交易提供了什么？提供了这个 KeyImage 的消耗。
+                    // 这样如果有第二笔相同 KeyImage 的交易进来，会被池子自动排斥。
+                    .and_provides((poll_id, key_image)) 
+                    .longevity(64) // 交易在池子里的存活块数
+                    .propagate(true) // 允许传播给其他节点
+                    .build()
+
+            } else {
+                // 如果不是 vote 调用，则不支持无签名
+                InvalidTransaction::Call.into()
+            }
         }
     }
 }

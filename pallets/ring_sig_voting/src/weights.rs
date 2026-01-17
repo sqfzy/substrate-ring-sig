@@ -28,6 +28,8 @@
 #![allow(unused_imports)]
 #![allow(missing_docs)]
 
+use frame::deps::frame_support;
+use frame::deps::frame_system;
 use frame_support::{traits::Get, weights::{Weight, constants::RocksDbWeight}};
 use core::marker::PhantomData;
 

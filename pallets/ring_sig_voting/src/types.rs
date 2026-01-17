@@ -13,7 +13,7 @@ use scale_info::prelude::vec::Vec;
 
 pub type PollId = u32;
 pub type RingId = u32;
-pub type Tally = u32;
+pub type Tally = BoundedVec<u8, ConstU32<1024>>;
 
 /// Wrapper for CompressedRistretto to make it compatible with Substrate storage
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -258,6 +258,7 @@ pub enum PollStatus {
 pub struct Poll<T: crate::Config> {
     pub poll_id: PollId,
     pub ring_id: RingId,
+    pub owner: T::AccountId,
     pub description: BoundedVec<u8, T::MaxDescriptionLength>,
     pub metadata_hash: <T::Hashing as Hash>::Output,
     pub deadline: BlockNumberFor<T>,
@@ -279,6 +280,7 @@ impl<T: crate::Config> Poll<T> {
     pub fn new(
         poll_id: PollId,
         ring_id: RingId,
+        owner: T::AccountId,
         description: BoundedVec<u8, T::MaxDescriptionLength>,
         metadata_hash: <T::Hashing as Hash>::Output,
         deadline: BlockNumberFor<T>,
@@ -295,6 +297,7 @@ impl<T: crate::Config> Poll<T> {
         Ok(Self {
             poll_id,
             ring_id,
+            owner,
             description,
             metadata_hash,
             deadline,
@@ -328,12 +331,19 @@ impl<T: crate::Config> Poll<T> {
             | (PollStatus::Tallying, PollStatus::Cancelled)
             | (PollStatus::Paused, PollStatus::Active)
             | (PollStatus::Paused, PollStatus::Tallying)
-            | (PollStatus::Paused, PollStatus::Cancelled) => true,
+            | (PollStatus::Paused, PollStatus::Cancelled)
+            | (PollStatus::Completed, PollStatus::Paused)
+            | (PollStatus::Completed, PollStatus::Cancelled) => true,
             _ => false,
         };
 
         if !valid_transition {
             return Err(crate::Error::<T>::InvalidStatusTransition.into());
+        }
+
+        // 如果设置为 Cancelled，清除 tally
+        if new_status == PollStatus::Cancelled {
+            self.tally = None;
         }
 
         self.status = new_status;
@@ -417,6 +427,7 @@ fn task_name(poll_id: u32) -> TaskName {
 pub struct EncryptedVote<MaxCiphertextLength: Get<u32>> {
     pub ephemeral_public_key: CompressedRistrettoWrapper,
     pub ciphertext: BoundedVec<u8, MaxCiphertextLength>,
+    pub key_image: CompressedRistrettoWrapper,
 }
 
 impl<MaxCiphertextLength: Get<u32>> EncryptedVote<MaxCiphertextLength> {

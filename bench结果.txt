@@ -1,0 +1,181 @@
+Pallet: "pallet_liquidity_pool", Extrinsic: "create_pool", Lowest values: [], Highest values: [], Steps: 50, Repeat: 20
+Raw Storage Info
+========
+Storage: `LiquidityPool::TradingPairs` (r:1 w:1)
+Proof: `LiquidityPool::TradingPairs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
+Storage: `LiquidityPool::NextPoolId` (r:1 w:1)
+Proof: `LiquidityPool::NextPoolId` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+Storage: `LiquidityPool::Pools` (r:0 w:1)
+Proof: `LiquidityPool::Pools` (`max_values`: None, `max_size`: Some(81), added: 2556, mode: `MaxEncodedLen`)
+
+Median Slopes Analysis
+========
+-- Extrinsic Time --
+
+Model:
+Time ~=    14.13
+              µs
+
+Reads = 2
+Writes = 3
+Recorded proof Size = 42
+
+Min Squares Analysis
+========
+-- Extrinsic Time --
+
+Model:
+Time ~=    14.13
+              µs
+
+Reads = 2
+Writes = 3
+Recorded proof Size = 42
+
+Pallet: "pallet_liquidity_pool", Extrinsic: "add_liquidity", Lowest values: [], Highest values: [], Steps: 50, Repeat: 20
+Raw Storage Info
+========
+Storage: `LiquidityPool::Pools` (r:1 w:1)
+Proof: `LiquidityPool::Pools` (`max_values`: None, `max_size`: Some(81), added: 2556, mode: `MaxEncodedLen`)
+Storage: `Assets::Asset` (r:2 w:2)
+Proof: `Assets::Asset` (`max_values`: None, `max_size`: Some(210), added: 2685, mode: `MaxEncodedLen`)
+Storage: `Assets::Account` (r:4 w:4)
+Proof: `Assets::Account` (`max_values`: None, `max_size`: Some(134), added: 2609, mode: `MaxEncodedLen`)
+Storage: `System::Account` (r:1 w:1)
+Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+Storage: `LiquidityPool::LpPositions` (r:1 w:1)
+Proof: `LiquidityPool::LpPositions` (`max_values`: None, `max_size`: Some(88), added: 2563, mode: `MaxEncodedLen`)
+
+Median Slopes Analysis
+========
+-- Extrinsic Time --
+
+Model:
+Time ~=    98.46
+              µs
+
+Reads = 9
+Writes = 9
+Recorded proof Size = 878
+
+Min Squares Analysis
+========
+-- Extrinsic Time --
+
+Model:
+Time ~=    98.46
+              µs
+
+Reads = 9
+Writes = 9
+Recorded proof Size = 878
+
+Pallet: "pallet_liquidity_pool", Extrinsic: "remove_liquidity", Lowest values: [], Highest values: [], Steps: 50, Repeat: 20
+Raw Storage Info
+========
+Storage: `LiquidityPool::Pools` (r:1 w:1)
+Proof: `LiquidityPool::Pools` (`max_values`: None, `max_size`: Some(81), added: 2556, mode: `MaxEncodedLen`)
+Storage: `LiquidityPool::LpPositions` (r:1 w:1)
+Proof: `LiquidityPool::LpPositions` (`max_values`: None, `max_size`: Some(88), added: 2563, mode: `MaxEncodedLen`)
+Storage: `Assets::Asset` (r:2 w:2)
+Proof: `Assets::Asset` (`max_values`: None, `max_size`: Some(210), added: 2685, mode: `MaxEncodedLen`)
+Storage: `Assets::Account` (r:4 w:4)
+Proof: `Assets::Account` (`max_values`: None, `max_size`: Some(134), added: 2609, mode: `MaxEncodedLen`)
+
+Median Slopes Analysis
+========
+-- Extrinsic Time --
+
+Model:
+Time ~=    86.17
+              µs
+
+Reads = 8
+Writes = 8
+Recorded proof Size = 1142
+
+Min Squares Analysis
+========
+-- Extrinsic Time --
+
+Model:
+Time ~=    86.17
+              µs
+
+Reads = 8
+Writes = 8
+Recorded proof Size = 1142
+
+Pallet: "pallet_liquidity_pool", Extrinsic: "swap_exact_tokens_for_tokens", Lowest values: [], Highest values: [], Steps: 50, Repeat: 20
+Raw Storage Info
+========
+Storage: `LiquidityPool::TradingPairs` (r:1 w:0)
+Proof: `LiquidityPool::TradingPairs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
+Storage: `LiquidityPool::Pools` (r:1 w:1)
+Proof: `LiquidityPool::Pools` (`max_values`: None, `max_size`: Some(81), added: 2556, mode: `MaxEncodedLen`)
+Storage: `Assets::Asset` (r:2 w:2)
+Proof: `Assets::Asset` (`max_values`: None, `max_size`: Some(210), added: 2685, mode: `MaxEncodedLen`)
+Storage: `Assets::Account` (r:4 w:4)
+Proof: `Assets::Account` (`max_values`: None, `max_size`: Some(134), added: 2609, mode: `MaxEncodedLen`)
+
+Median Slopes Analysis
+========
+-- Extrinsic Time --
+
+Model:
+Time ~=    91.68
+              µs
+
+Reads = 8
+Writes = 7
+Recorded proof Size = 1081
+
+Min Squares Analysis
+========
+-- Extrinsic Time --
+
+Model:
+Time ~=    91.68
+              µs
+
+Reads = 8
+Writes = 7
+Recorded proof Size = 1081
+
+Pallet: "pallet_liquidity_pool", Extrinsic: "swap_tokens_for_exact_tokens", Lowest values: [], Highest values: [], Steps: 50, Repeat: 20
+Raw Storage Info
+========
+Storage: `LiquidityPool::TradingPairs` (r:1 w:0)
+Proof: `LiquidityPool::TradingPairs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
+Storage: `LiquidityPool::Pools` (r:1 w:1)
+Proof: `LiquidityPool::Pools` (`max_values`: None, `max_size`: Some(81), added: 2556, mode: `MaxEncodedLen`)
+Storage: `Assets::Asset` (r:2 w:2)
+Proof: `Assets::Asset` (`max_values`: None, `max_size`: Some(210), added: 2685, mode: `MaxEncodedLen`)
+Storage: `Assets::Account` (r:4 w:4)
+Proof: `Assets::Account` (`max_values`: None, `max_size`: Some(134), added: 2609, mode: `MaxEncodedLen`)
+
+Median Slopes Analysis
+========
+-- Extrinsic Time --
+
+Model:
+Time ~=    107.4
+              µs
+
+Reads = 8
+Writes = 7
+Recorded proof Size = 1081
+
+Min Squares Analysis
+========
+-- Extrinsic Time --
+
+Model:
+Time ~=    107.4
+              µs
+
+Reads = 8
+Writes = 7
+Recorded proof Size = 1081
+
+Created file: "./pallets/pallet_liquidity_pool/src/weights.rs"
