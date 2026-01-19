@@ -61,9 +61,6 @@ pub mod tests {
         pub type RingSigVoting = ring_sig_voting;
     }
 
-    parameter_types! {
-        pub MaxWeight: Weight = Weight::from_parts(2_000_000_000_000, u64::MAX);
-    }
     ord_parameter_types! {
         pub const AliceAccount: u64 = ALICE;
     }
@@ -81,12 +78,13 @@ pub mod tests {
         type ManagerOrigin = EnsureRoot<u64>;
         type Consideration = ();
     }
+
     impl pallet_scheduler::Config for Test {
         type RuntimeEvent = RuntimeEvent;
         type RuntimeOrigin = RuntimeOrigin;
         type PalletsOrigin = OriginCaller;
         type RuntimeCall = RuntimeCall;
-        type MaximumWeight = MaxWeight;
+        type MaximumWeight = ();
         type ScheduleOrigin = EnsureRoot<u64>;
         type MaxScheduledPerBlock = ConstU32<100>;
         type WeightInfo = ();
@@ -102,10 +100,10 @@ pub mod tests {
         type Preimages = Preimage;
         type MaxDescriptionLength = ConstU32<256>;
         type MaxRingSize = ConstU32<16>;
-        // Removed MaxVkLength
         type MaxCiphertextLength = ConstU32<128>;
         type MaxVoteNum = ConstU32<1000>;
         type AdminOrigin = EnsureSignedBy<AliceAccount, u64>;
+        type WeightInfo = ();
     }
 
     // Test externalities initialization
@@ -116,142 +114,4 @@ pub mod tests {
 
         storage.into()
     }
-
-    // Helper to register a ring and return ring_id
-    pub fn register_ring(
-        origin: RuntimeOrigin,
-        ring: Vec<CompressedRistrettoWrapper>,
-    ) -> Result<u32, DispatchError> {
-        let ring_id = RingSigVoting::ring_count();
-        RingSigVoting::register_ring(origin, ring)?;
-        Ok(ring_id)
-    }
-
-    // Helper to setup a basic poll
-    pub fn setup_poll(ring_size: usize, deadline: u64) -> u32 {
-        let ring = generate_test_ring(ring_size);
-        register_ring(RuntimeOrigin::signed(ALICE), ring).expect("Ring registration failed");
-
-        RingSigVoting::create_poll(
-            RuntimeOrigin::signed(ALICE),
-            0, // ring_id
-            POLL_DESCRIPTION.to_vec(),
-            POLL_METADATA.to_vec(),
-            deadline,
-            random_tally_key(),
-            // Removed tally_vk
-        )
-        .expect("Poll creation failed");
-
-        0 // poll_id
-    }
-
-    // Helper to submit a vote
-    pub fn submit_vote(
-        origin: RuntimeOrigin,
-        poll_id: u32,
-        ephemeral_public_key: CompressedRistrettoWrapper,
-        ciphertext: Vec<u8>,
-        challenge: ScalarWrapper,
-        responses: Vec<ScalarWrapper>,
-        key_image: CompressedRistrettoWrapper,
-    ) -> DispatchResult {
-        RingSigVoting::vote(
-            origin,
-            poll_id,
-            ephemeral_public_key,
-            ciphertext,
-            challenge,
-            responses,
-            key_image,
-        )
-    }
-
-    // Helper to assert poll status
-    pub fn assert_poll_status(poll_id: u32, expected_status: PollStatus) {
-        let poll = RingSigVoting::polls(poll_id).unwrap();
-        assert_eq!(poll.status, expected_status);
-    }
-}
-
-// Helper function to generate a test ring
-pub fn generate_test_ring(size: usize) -> Vec<CompressedRistrettoWrapper> {
-    (0..size)
-        .map(|_| CompressedRistrettoWrapper::from(RistrettoPoint::random(&mut OsRng)))
-        .collect()
-}
-
-// Helper function to generate a BLSAG signature for testing
-pub fn generate_test_signature(
-    ring_size: usize,
-    secret_index: usize,
-    message: &[u8],
-) -> (
-    ScalarWrapper,
-    Vec<ScalarWrapper>,
-    Vec<CompressedRistrettoWrapper>,
-    CompressedRistrettoWrapper,
-) {
-    let secret_key = Scalar::random(&mut OsRng);
-
-    let mut ring: Vec<RistrettoPoint> = (0..ring_size - 1)
-        .map(|_| RistrettoPoint::random(&mut OsRng))
-        .collect();
-
-    let public_key = secret_key * &curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-    ring[secret_index] = public_key;
-
-    let signature =
-        BLSAG::sign::<blake2::Blake2b512, OsRng>(secret_key, ring.clone(), secret_index, message);
-    assert!(BLSAG::verify::<blake2::Blake2b512>(
-        signature.clone(),
-        message
-    ));
-
-    (
-        ScalarWrapper::from(signature.challenge),
-        signature.responses.into_iter().map(Into::into).collect(),
-        signature.ring.into_iter().map(|p| p.into()).collect(),
-        CompressedRistrettoWrapper::from(signature.key_image),
-    )
-}
-
-// Helper to generate random tally public key
-pub fn random_tally_key() -> CompressedRistrettoWrapper {
-    CompressedRistrettoWrapper::from(RistrettoPoint::random(&mut OsRng))
-}
-
-// Helper to create encrypted vote and signature
-pub fn create_vote_with_signature<T: crate::Config>(
-    ring_size: usize,
-    secret_index: usize,
-    ciphertext_data: &[u8],
-) -> (
-    CompressedRistrettoWrapper,
-    Vec<u8>,
-    ScalarWrapper,
-    Vec<ScalarWrapper>,
-    Vec<CompressedRistrettoWrapper>,
-    CompressedRistrettoWrapper,
-) {
-    let ephemeral_public_key = random_tally_key();
-    let ciphertext = ciphertext_data.to_vec();
-
-    let encrypted_vote = EncryptedVote::<T::MaxCiphertextLength> {
-        ephemeral_public_key: ephemeral_public_key.clone(),
-        ciphertext: BoundedVec::try_from(ciphertext.clone()).unwrap(),
-    };
-    let message = encrypted_vote.to_bytes();
-
-    let (challenge, responses, sig_ring, key_image) =
-        generate_test_signature(ring_size, secret_index, &message);
-
-    (
-        ephemeral_public_key,
-        ciphertext,
-        challenge,
-        responses,
-        sig_ring,
-        key_image,
-    )
 }

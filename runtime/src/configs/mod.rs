@@ -393,7 +393,7 @@ impl ring_sig_voting::Config for Runtime {
     type AdminOrigin = frame_system::EnsureRoot<AccountId>;
     #[cfg(feature = "runtime-benchmarks")]
     type AdminOrigin = frame_system::EnsureSigned<AccountId>;
-    type WeightInfo = ();
+    type WeightInfo = ring_sig_voting::weights::SubstrateWeight<Runtime>;
 }
 
 parameter_types! {
