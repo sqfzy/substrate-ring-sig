@@ -6503,6 +6503,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "key_gen"
+version = "0.1.0"
+dependencies = [
+ "curve25519-dalek",
+ "hex",
+ "rand_core 0.6.4",
+]
+
+[[package]]
 name = "keystream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

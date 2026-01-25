@@ -1,0 +1,11 @@
+[package]
+name = "key_gen"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+curve25519-dalek = { version = "4.1", features = ["rand_core"] }
+rand_core = { version = "0.6", features = ["std"] }
+hex = "0.4"

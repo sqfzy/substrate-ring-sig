@@ -9,21 +9,29 @@
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"build:wasm": "cd crypto && wasm-pack build --target web --out-dir ../src/lib/wasm"
 	},
 	"dependencies": {
-		"daisyui": "^5.5.1-beta.2"
+		"@polkadot/api": "^16.5.4",
+		"@polkadot/extension-dapp": "^0.62.6",
+		"@polkadot/extension-inject": "^0.62.6",
+		"@polkadot/util": "^14.0.1",
+		"@polkadot/util-crypto": "^14.0.1",
+		"daisyui": "^5.5.14",
+		"svelte-persisted-store": "^0.12.0"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^7.0.0",
-		"@sveltejs/kit": "^2.48.5",
-		"@sveltejs/vite-plugin-svelte": "^6.2.1",
+		"@sveltejs/kit": "^2.50.0",
+		"@sveltejs/vite-plugin-svelte": "^6.2.4",
 		"@tailwindcss/typography": "^0.5.19",
-		"@tailwindcss/vite": "^4.1.17",
-		"svelte": "^5.43.8",
-		"svelte-check": "^4.3.4",
-		"tailwindcss": "^4.1.17",
+		"@tailwindcss/vite": "^4.1.18",
+		"@types/node": "^25.0.9",
+		"svelte": "^5.47.0",
+		"svelte-check": "^4.3.5",
+		"tailwindcss": "^4.1.18",
 		"typescript": "^5.9.3",
-		"vite": "^7.2.2"
+		"vite": "^7.3.1"
 	}
 }
