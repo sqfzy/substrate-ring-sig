@@ -76,17 +76,6 @@ CheckRing: Ring 存在性 {
   label: "Rings.contains(ring_id)?"
 }
 
-CheckDesc: 描述长度 {
-  class: logic
-  label: "desc.len() <= Max?"
-}
-
-# 3. 逻辑处理
-GetID: 获取 Poll ID {
-  class: storage
-  label: "Read: PollCount"
-}
-
 HashMeta: 处理元数据 {
   class: process
   label: "Preimage::note(meta)"
@@ -111,11 +100,6 @@ StorePoll: 存储 Poll {
   label: "Insert: Polls\n(id, poll)"
 }
 
-IncID: 更新计数器 {
-  class: storage
-  label: "Update: PollCount\n(id + 1)"
-}
-
 EmitEvent: 发送事件 {
   class: process
   label: "Event: PollCreated"
@@ -129,7 +113,6 @@ EndOK: 流程结束 {
 # 错误节点
 ErrPerm: Error: BadOrigin {class: error}
 ErrRing: Error: RingNotFound {class: error}
-ErrDesc: Error: DescriptionTooLong {class: error}
 ErrDeadline: Error: InvalidDeadline {class: error}
 
 # --- 连线逻辑 ---
@@ -138,19 +121,14 @@ Input -> CheckAdmin
 CheckAdmin -> CheckRing: "Yes"
 CheckAdmin -> ErrPerm: "No"
 
-CheckRing -> CheckDesc: "Yes"
+CheckRing -> HashMeta: "Yes"
 CheckRing -> ErrRing: "No"
 
-CheckDesc -> GetID: "Valid"
-CheckDesc -> ErrDesc: "Too Long"
-
-GetID -> HashMeta
 HashMeta -> NewPoll
 NewPoll -> CheckDeadline
 
 CheckDeadline -> StorePoll: "Valid"
 CheckDeadline -> ErrDeadline: "Expired"
 
-StorePoll -> IncID
-IncID -> EmitEvent
+StorePoll -> EmitEvent
 EmitEvent -> EndOK

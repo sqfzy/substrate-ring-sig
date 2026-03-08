@@ -220,7 +220,11 @@ pub mod pallet {
             // 包含多个 32 字节公钥的向量。
             ring: Vec<CompressedRistrettoWrapper>,
         ) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin)?;
+            let who = ensure_signed(origin.clone())?;
+            ensure!(
+                Teachers::<T>::contains_key(&who) || T::AdminOrigin::ensure_origin(origin).is_ok(),
+                Error::<T>::NoPermission
+            );
 
             let bounded_ring: BoundedVec<CompressedRistrettoWrapper, T::MaxRingSize> =
                 ring.try_into().map_err(|_| Error::<T>::RingTooLarge)?;
