@@ -431,10 +431,16 @@ pub struct EncryptedVote<MaxCiphertextLength: Get<u32>> {
 }
 
 impl<MaxCiphertextLength: Get<u32>> EncryptedVote<MaxCiphertextLength> {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(32 + self.ciphertext.len());
+    /// 构造用于环签名的消息，强制绑定上下文(genesis_hash, poll_id, key_image)防止重放攻击
+    pub fn construct_message(&self, genesis_hash: &[u8], poll_id: u32) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(100 + self.ciphertext.len());
+        
+        bytes.extend_from_slice(genesis_hash);
+        bytes.extend_from_slice(&poll_id.to_be_bytes());
+        bytes.extend_from_slice(&self.key_image.to_bytes());
         bytes.extend_from_slice(&self.ephemeral_public_key.to_bytes());
         bytes.extend_from_slice(&self.ciphertext);
+        
         bytes
     }
 }

@@ -116,12 +116,21 @@ mod benchmarks {
     fn register_ring() {
         let caller = get_admin::<T>();
         let ring = generate_test_ring(RING_SIZE);
+        
+        // 提前注册公钥并收集 IDs
+        let mut student_ids = Vec::new();
+        for pk in ring {
+            let id = RingSigVoting::<T>::next_student_id();
+            RingSigVoting::<T>::register_student_key(RawOrigin::Signed(caller.clone()).into(), pk).unwrap();
+            student_ids.push(id);
+        }
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(caller), ring);
+        _(RawOrigin::Signed(caller), student_ids);
 
         assert_eq!(RingSigVoting::<T>::ring_count(), 1);
     }
+
 
     // ---------- create_poll ----------
 

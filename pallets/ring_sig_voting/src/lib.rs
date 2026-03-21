@@ -78,6 +78,23 @@ pub mod pallet {
         type WeightInfo: weights::WeightInfo;
     }
 
+    /// Storage for student public keys (StudentId -> PublicKey)
+    #[pallet::storage]
+    #[pallet::getter(fn student_keys)]
+    pub type StudentKeys<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        u32, // StudentId
+        CompressedRistrettoWrapper,
+        OptionQuery,
+    >;
+
+    /// Next available StudentId
+    #[pallet::storage]
+    #[pallet::getter(fn next_student_id)]
+    pub type NextStudentId<T: Config> = StorageValue<_, u32, ValueQuery>;
+
+
     /// Storage for ring signature groups
     #[pallet::storage]
     #[pallet::getter(fn rings)]
@@ -173,6 +190,10 @@ pub mod pallet {
             from: T::AccountId,
             to: T::AccountId,
         },
+        /// A student public key has been registered by admin
+        StudentKeyRegistered { student_id: u32, public_key: CompressedRistrettoWrapper },
+        /// A student public key has been revoked by admin
+        StudentKeyRevoked { student_id: u32 },
     }
 
     /// Errors
@@ -204,6 +225,10 @@ pub mod pallet {
         Overflow,
         /// Call is too large to be scheduled inline
         CallTooLarge,
+        /// Student ID not found in the registry
+        StudentKeyNotFound,
+        /// Duplicate Student ID provided when registering a ring
+        DuplicateStudentId,
     }
 
     #[pallet::call]
@@ -212,13 +237,13 @@ pub mod pallet {
         ///
         /// *输入构造*：
         ///
-        /// 用户需要使用 `curve25519-dalek` 生成公钥。
+        /// 老师传入的是合法的学生 ID (StudentId) 数组，系统会在链上映射为真实公钥组建环。
         #[pallet::call_index(0)]
         #[pallet::weight(T::WeightInfo::register_ring())]
         pub fn register_ring(
             origin: OriginFor<T>,
-            // 包含多个 32 字节公钥的向量。
-            ring: Vec<CompressedRistrettoWrapper>,
+            // 修改为包含学生 ID 的向量
+            student_ids: Vec<u32>,
         ) -> DispatchResult {
             let who = ensure_signed(origin.clone())?;
             ensure!(
@@ -226,12 +251,31 @@ pub mod pallet {
                 Error::<T>::NoPermission
             );
 
+            // 检查 Ring 大小上限
+            let bounded_ids: BoundedVec<u32, T::MaxRingSize> =
+                student_ids.try_into().map_err(|_| Error::<T>::RingTooLarge)?;
+
+            // 检查重复的 Student ID
+            let mut ids_sorted = bounded_ids.clone().into_inner();
+            ids_sorted.sort_unstable();
+            for i in 1..ids_sorted.len() {
+                ensure!(ids_sorted[i] != ids_sorted[i - 1], Error::<T>::DuplicateStudentId);
+            }
+
+            // 根据传入的 ID 组装实际的 Ring (提取对应的公钥)
+            let mut ring = Vec::new();
+            for id in bounded_ids {
+                let pk = StudentKeys::<T>::get(id).ok_or(Error::<T>::StudentKeyNotFound)?;
+                ring.push(pk);
+            }
+
             let bounded_ring: BoundedVec<CompressedRistrettoWrapper, T::MaxRingSize> =
                 ring.try_into().map_err(|_| Error::<T>::RingTooLarge)?;
 
             let ring_id = RingCount::<T>::get();
             let next_ring_id = ring_id.wrapping_add(1);
 
+            // 依然存储真实公钥组成的 BoundedVec，使得 vote() 的无签名验证逻辑保持高效，不需要多次读库
             Rings::<T>::insert(ring_id, bounded_ring);
             RingCount::<T>::put(next_ring_id);
 
@@ -337,8 +381,11 @@ pub mod pallet {
                 key_image: key_image.clone(),
             };
 
+            // 获取当前链的创世区块哈希
+            let genesis_hash = frame_system::Pallet::<T>::block_hash(BlockNumberFor::<T>::from(0u32));
+
             // 为了确保 ciphertext 能被 ephemeral_private_key 解密，签名消息需要包含 ephemeral_public_key。
-            let message = encrypted_vote.to_bytes();
+            let message = encrypted_vote.construct_message(genesis_hash.as_ref(), poll_id);
 
             let blsag_wrapper = BLSAGWrapper::<T::MaxRingSize> {
                 challenge,
@@ -419,11 +466,14 @@ pub mod pallet {
         #[pallet::call_index(4)]
         #[pallet::weight(T::WeightInfo::tally_poll())]
         pub fn tally_poll(origin: OriginFor<T>, poll_id: u32) -> DispatchResult {
-            T::AdminOrigin::ensure_origin(origin.clone())?;
+            let who = ensure_signed(origin.clone())?;
 
             Polls::<T>::try_mutate(poll_id, |poll_opt| -> DispatchResult {
                 let poll = poll_opt.as_mut().ok_or(Error::<T>::PollNotFound)?;
-                // Only allow transition from Active
+                ensure!(
+                    who == poll.owner || T::AdminOrigin::ensure_origin(origin).is_ok(),
+                    Error::<T>::NoPermission
+                );
                 if poll.status == PollStatus::Active {
                     poll.set_status(PollStatus::Tallying)?;
                 }
@@ -563,7 +613,7 @@ pub mod pallet {
 
         /// 更改所有权
         /// 场景：紧急接管、账号丢失恢复、恶意老师处理
-        #[pallet::call_index(31)]
+        #[pallet::call_index(11)]
         #[pallet::weight(T::WeightInfo::change_owner())]
         pub fn change_owner(
             origin: OriginFor<T>,
@@ -589,6 +639,45 @@ pub mod pallet {
                 Ok(())
             })
         }
+
+        /// Register a student's public key (Admin only)
+        #[pallet::call_index(12)]
+        #[pallet::weight(T::WeightInfo::register_ring())]
+        pub fn register_student_key(
+            origin: OriginFor<T>,
+            public_key: CompressedRistrettoWrapper,
+        ) -> DispatchResult {
+            // 只有最高管理员可以注册身份
+            T::AdminOrigin::ensure_origin(origin)?;
+
+            let id = NextStudentId::<T>::get();
+            let next_id = id.wrapping_add(1);
+
+            StudentKeys::<T>::insert(id, public_key.clone());
+            NextStudentId::<T>::put(next_id);
+
+            Self::deposit_event(Event::StudentKeyRegistered { student_id: id, public_key });
+            Ok(())
+        }
+
+        /// Revoke a student's public key (Admin only)
+        #[pallet::call_index(13)]
+        #[pallet::weight(T::WeightInfo::register_ring())]
+        pub fn revoke_student_key(
+            origin: OriginFor<T>,
+            student_id: u32,
+        ) -> DispatchResult {
+            // 只有最高管理员可以吊销身份
+            T::AdminOrigin::ensure_origin(origin)?;
+
+            ensure!(StudentKeys::<T>::contains_key(student_id), Error::<T>::StudentKeyNotFound);
+            
+            StudentKeys::<T>::remove(student_id);
+
+            Self::deposit_event(Event::StudentKeyRevoked { student_id });
+            Ok(())
+        }
+
     }
 
     #[pallet::validate_unsigned]
@@ -636,7 +725,11 @@ pub mod pallet {
                     ciphertext: bounded_ciphertext,
                     key_image: key_image.clone(),
                 };
-                let message = encrypted_vote.to_bytes();
+                
+                // 获取创世区块哈希
+                let genesis_hash = frame_system::Pallet::<T>::block_hash(BlockNumberFor::<T>::from(0u32));
+                // 构造包含完整上下文的验证消息
+                let message = encrypted_vote.construct_message(genesis_hash.as_ref(), *poll_id);
 
                 // 转换 responses
                 let bounded_responses: BoundedVec<ScalarWrapper, T::MaxRingSize> = responses

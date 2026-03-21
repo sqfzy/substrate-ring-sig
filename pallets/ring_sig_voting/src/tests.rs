@@ -35,6 +35,8 @@ fn create_vote(
     ring_size: usize,
     secret_index: usize,
     ciphertext_data: &[u8],
+    poll_id: u32, 
+    genesis_hash: H256,
 ) -> (
     CompressedRistrettoWrapper,      // ephemeral_public_key
     Vec<u8>,                         // ciphertext
@@ -69,7 +71,7 @@ fn create_vote(
         ciphertext: BoundedVec::try_from(ciphertext.clone()).unwrap(),
         key_image: key_image.clone(),
     };
-    let message = encrypted_vote.to_bytes();
+    let message = encrypted_vote.construct_message(genesis_hash.as_ref(), poll_id);
 
     // 5. 生成 BLSAG 签名
     let signature = BLSAG::sign::<blake2::Blake2b512, OsRng>(
@@ -97,6 +99,21 @@ fn create_vote(
     )
 }
 
+/// 辅助函数：由管理员 (ALICE) 注册一组公钥，并返回对应的 StudentId 数组
+fn register_keys_and_get_ids(keys: &[CompressedRistrettoWrapper]) -> Vec<u32> {
+    let mut ids = Vec::new();
+    for key in keys {
+        let id = RingSigVoting::next_student_id();
+        assert_ok!(RingSigVoting::register_student_key(
+            RuntimeOrigin::signed(ALICE),
+            key.clone()
+        ));
+        ids.push(id);
+    }
+    ids
+}
+
+
 // ========== 测试用例 ==========
 
 // ---------- Ring Registration ----------
@@ -108,9 +125,12 @@ fn register_ring_works() {
 
         let ring = generate_ring(RING_SIZE);
 
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring.clone()
+            student_ids
         ));
 
         assert_eq!(RingSigVoting::ring_count(), 1);
@@ -126,9 +146,11 @@ fn register_ring_fails_without_admin() {
         System::set_block_number(1);
         let ring = generate_ring(RING_SIZE);
 
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
         assert_noop!(
-            RingSigVoting::register_ring(RuntimeOrigin::signed(BOB), ring),
-            BadOrigin
+            RingSigVoting::register_ring(RuntimeOrigin::signed(BOB), student_ids),
+            Error::<Test>::NoPermission
         );
     });
 }
@@ -140,8 +162,10 @@ fn register_ring_fails_with_oversized_ring() {
         let oversized = 20; // MaxRingSize = 16
         let ring = generate_ring(oversized);
 
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
         assert_noop!(
-            RingSigVoting::register_ring(RuntimeOrigin::signed(ALICE), ring),
+            RingSigVoting::register_ring(RuntimeOrigin::signed(ALICE), student_ids),
             Error::<Test>::RingTooLarge
         );
     });
@@ -195,9 +219,12 @@ fn create_poll_works() {
 
         // 1. 注册 Ring
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         // 2. 授权 BOB 为 Teacher
@@ -237,9 +264,12 @@ fn create_poll_fails_without_authorization() {
         System::set_block_number(1);
 
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         let (public_key, _) = generate_keypair();
@@ -265,9 +295,12 @@ fn create_poll_fails_with_invalid_deadline() {
         System::set_block_number(10);
 
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -324,14 +357,19 @@ fn create_poll_fails_with_nonexistent_ring() {
 fn vote_works() {
     new_test_ext().execute_with(|| {
         System::set_block_number(1);
+        let poll_id = 0;
+        let genesis_hash = frame_system::Pallet::<Test>::block_hash(BlockNumberFor::<Test>::from(0u32));
 
         // 1. 准备环境
         let (ephemeral_pk, ciphertext, challenge, responses, ring, key_image) =
-            create_vote(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT);
+            create_vote(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT, poll_id, genesis_hash);
 
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -376,13 +414,18 @@ fn vote_works() {
 fn vote_prevents_double_voting() {
     new_test_ext().execute_with(|| {
         System::set_block_number(1);
+        let poll_id = 0;
+        let genesis_hash = frame_system::Pallet::<Test>::block_hash(BlockNumberFor::<Test>::from(0u32));
 
         let (ephemeral_pk, ciphertext, challenge, responses, ring, key_image) =
-            create_vote(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT);
+            create_vote(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT, poll_id, genesis_hash);
 
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -431,13 +474,18 @@ fn vote_prevents_double_voting() {
 fn vote_fails_on_invalid_signature() {
     new_test_ext().execute_with(|| {
         System::set_block_number(1);
+        let poll_id = 0;
+        let genesis_hash = frame_system::Pallet::<Test>::block_hash(BlockNumberFor::<Test>::from(0u32));
 
         let (ephemeral_pk, ciphertext, _, _, ring, key_image) =
-            create_vote(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT);
+            create_vote(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT, poll_id, genesis_hash);
 
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -478,13 +526,18 @@ fn vote_fails_on_invalid_signature() {
 fn vote_fails_on_paused_poll() {
     new_test_ext().execute_with(|| {
         System::set_block_number(1);
+        let poll_id = 0;
+        let genesis_hash = frame_system::Pallet::<Test>::block_hash(BlockNumberFor::<Test>::from(0u32));
 
         let (ephemeral_pk, ciphertext, challenge, responses, ring, key_image) =
-            create_vote(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT);
+            create_vote(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT, poll_id, genesis_hash);
 
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -533,9 +586,12 @@ fn tally_poll_works() {
         System::set_block_number(1);
 
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -569,9 +625,12 @@ fn tally_works() {
 
         // 1. 准备环境
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -626,9 +685,12 @@ fn tally_fails_with_wrong_private_key() {
         System::set_block_number(1);
 
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -670,9 +732,12 @@ fn pause_poll_works() {
         System::set_block_number(1);
 
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -715,9 +780,12 @@ fn cancel_poll_works() {
         System::set_block_number(1);
 
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -752,9 +820,12 @@ fn active_poll_works() {
         System::set_block_number(1);
 
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -795,9 +866,12 @@ fn set_deadline_works() {
         System::set_block_number(1);
 
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -843,9 +917,12 @@ fn change_owner_works() {
         System::set_block_number(1);
 
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -890,9 +967,11 @@ fn change_owner_works() {
 fn cannot_vote_on_nonexistent_poll() {
     new_test_ext().execute_with(|| {
         System::set_block_number(1);
+        let poll_id = 0;
+        let genesis_hash = frame_system::Pallet::<Test>::block_hash(BlockNumberFor::<Test>::from(0u32));
 
         let (ephemeral_pk, ciphertext, challenge, responses, _, key_image) =
-            create_vote(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT);
+            create_vote(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT, poll_id, genesis_hash);
 
         assert_noop!(
             RingSigVoting::vote(
@@ -915,9 +994,12 @@ fn cannot_tally_without_admin() {
         System::set_block_number(1);
 
         let ring = generate_ring(RING_SIZE);
+        // 先注册公钥获取 ID
+        let student_ids = register_keys_and_get_ids(&ring);
+        // 传入 ID 数组组建环
         assert_ok!(RingSigVoting::register_ring(
             RuntimeOrigin::signed(ALICE),
-            ring
+            student_ids
         ));
 
         assert_ok!(RingSigVoting::authorize_teacher(
@@ -935,10 +1017,50 @@ fn cannot_tally_without_admin() {
             public_key,
         ));
 
-        // BOB 不是 Admin
+        // BOB 是 Owner，ALICE 是 Admin。
+        // 使用一个无权限的第三方账户 3 来测试拦截逻辑
         assert_noop!(
-            RingSigVoting::tally_poll(RuntimeOrigin::signed(BOB), 0),
-            BadOrigin
+            RingSigVoting::tally_poll(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::NoPermission
         );
     });
 }
+
+#[test]
+fn register_student_key_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        let (public_key, _) = generate_keypair();
+
+        assert_ok!(RingSigVoting::register_student_key(
+            RuntimeOrigin::signed(ALICE),
+            public_key.clone()
+        ));
+
+        assert_eq!(RingSigVoting::next_student_id(), 1);
+        assert_eq!(RingSigVoting::student_keys(0).unwrap(), public_key);
+        System::assert_last_event(Event::StudentKeyRegistered { student_id: 0, public_key }.into());
+    });
+}
+
+#[test]
+fn revoke_student_key_works() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        let (public_key, _) = generate_keypair();
+
+        assert_ok!(RingSigVoting::register_student_key(
+            RuntimeOrigin::signed(ALICE),
+            public_key.clone()
+        ));
+
+        assert_ok!(RingSigVoting::revoke_student_key(
+            RuntimeOrigin::signed(ALICE),
+            0
+        ));
+
+        assert!(RingSigVoting::student_keys(0).is_none());
+        System::assert_last_event(Event::StudentKeyRevoked { student_id: 0 }.into());
+    });
+}
+
