@@ -386,7 +386,7 @@ impl ring_sig_voting::Config for Runtime {
     type Scheduler = pallet_scheduler::Pallet<Runtime>;
     type Preimages = pallet_preimage::Pallet<Runtime>;
     type MaxDescriptionLength = ConstU32<256>;
-    type MaxRingSize = ConstU32<16>;
+    type MaxRingSize = ConstU32<32>;
     type MaxCiphertextLength = ConstU32<128>;
     type MaxVoteNum = ConstU32<1000>;
     #[cfg(not(feature = "runtime-benchmarks"))]

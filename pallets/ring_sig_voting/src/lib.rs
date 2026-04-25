@@ -237,7 +237,7 @@ pub mod pallet {
         ///
         /// *输入构造*：
         ///
-        /// 老师传入的是合法的学生 ID (StudentId) 数组，系统会在链上映射为真实公钥组建环。
+        /// 传入的是合法的学生 ID (StudentId) 数组，系统会在链上映射为真实公钥组建环。
         #[pallet::call_index(0)]
         #[pallet::weight(T::WeightInfo::register_ring())]
         pub fn register_ring(
@@ -245,11 +245,7 @@ pub mod pallet {
             // 修改为包含学生 ID 的向量
             student_ids: Vec<u32>,
         ) -> DispatchResult {
-            let who = ensure_signed(origin.clone())?;
-            ensure!(
-                Teachers::<T>::contains_key(&who) || T::AdminOrigin::ensure_origin(origin).is_ok(),
-                Error::<T>::NoPermission
-            );
+            T::AdminOrigin::ensure_origin(origin)?;
 
             // 检查 Ring 大小上限
             let bounded_ids: BoundedVec<u32, T::MaxRingSize> =
@@ -642,7 +638,7 @@ pub mod pallet {
 
         /// Register a student's public key (Admin only)
         #[pallet::call_index(12)]
-        #[pallet::weight(T::WeightInfo::register_ring())]
+        #[pallet::weight(T::WeightInfo::register_student_key())]
         pub fn register_student_key(
             origin: OriginFor<T>,
             public_key: CompressedRistrettoWrapper,
@@ -662,7 +658,7 @@ pub mod pallet {
 
         /// Revoke a student's public key (Admin only)
         #[pallet::call_index(13)]
-        #[pallet::weight(T::WeightInfo::register_ring())]
+        #[pallet::weight(T::WeightInfo::revoke_student_key())]
         pub fn revoke_student_key(
             origin: OriginFor<T>,
             student_id: u32,

@@ -11,7 +11,7 @@ use scale_info::prelude::{vec, vec::Vec};
 #[cfg(test)]
 pub use tests::*;
 
-pub const RING_SIZE: usize = 10;
+pub const RING_SIZE: usize = 30;
 pub const SECRET_INDEX: usize = 3;
 #[cfg(test)]
 pub const DEADLINE: u64 = 100;
@@ -99,7 +99,7 @@ pub mod tests {
         type Scheduler = Scheduler;
         type Preimages = Preimage;
         type MaxDescriptionLength = ConstU32<256>;
-        type MaxRingSize = ConstU32<16>;
+        type MaxRingSize = ConstU32<128>;
         type MaxCiphertextLength = ConstU32<128>;
         type MaxVoteNum = ConstU32<1000>;
         type AdminOrigin = EnsureSignedBy<AliceAccount, u64>;

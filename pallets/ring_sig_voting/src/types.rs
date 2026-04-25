@@ -389,7 +389,8 @@ fn schedule_deadline_task<T: crate::Config>(
 
     // 构造调用
     let call: <T as crate::Config>::RuntimeCall = crate::Call::<T>::tally_poll { poll_id }.into();
-    let bounded_call = BoundedVec::try_from(call.encode()).expect("Call must be at most 128 bytes");
+    let bounded_call = BoundedVec::try_from(call.encode())
+        .map_err(|_| crate::Error::<T>::CallTooLarge)?;
 
     // 调度任务
     T::Scheduler::schedule_named(

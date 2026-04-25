@@ -13,7 +13,7 @@ use scale_info::prelude::vec::Vec;
 
 // ========== 辅助函数 ==========
 
-/// 生成测试 Ring
+/// 生成测试 Ring（返回公钥列表）
 fn generate_test_ring(size: usize) -> Vec<CompressedRistrettoWrapper> {
     (0..size)
         .map(|_| CompressedRistrettoWrapper::from(RistrettoPoint::random(&mut OsRng)))
@@ -32,11 +32,43 @@ fn generate_test_keypair() -> (CompressedRistrettoWrapper, ScalarWrapper) {
     )
 }
 
+/// 由管理员注册一组公钥到 StudentKeys，返回对应的 StudentId 数组
+fn register_keys_and_get_ids<T: Config>(
+    admin: &T::AccountId,
+    keys: &[CompressedRistrettoWrapper],
+) -> Vec<u32> {
+    use crate::Pallet as RingSigVoting;
+    use frame_system::RawOrigin;
+
+    let mut ids = Vec::new();
+    for key in keys {
+        let id = RingSigVoting::<T>::next_student_id();
+        RingSigVoting::<T>::register_student_key(
+            RawOrigin::Signed(admin.clone()).into(),
+            key.clone(),
+        )
+        .unwrap();
+        ids.push(id);
+    }
+    ids
+}
+
+/// 辅助函数：注册公钥并组建环，返回 ring_id (始终为当前 ring_count)
+fn setup_ring<T: Config>(admin: &T::AccountId, keys: &[CompressedRistrettoWrapper]) {
+    use crate::Pallet as RingSigVoting;
+    use frame_system::RawOrigin;
+
+    let student_ids = register_keys_and_get_ids::<T>(admin, keys);
+    RingSigVoting::<T>::register_ring(RawOrigin::Signed(admin.clone()).into(), student_ids)
+        .unwrap();
+}
+
 /// 生成完整的投票数据
 fn create_test_vote<T: Config>(
     ring_size: usize,
     secret_index: usize,
     ciphertext_data: &[u8],
+    poll_id: u32,
 ) -> (
     CompressedRistrettoWrapper,
     Vec<u8>,
@@ -67,7 +99,10 @@ fn create_test_vote<T: Config>(
         ciphertext: BoundedVec::try_from(ciphertext.clone()).unwrap(),
         key_image: key_image.clone(),
     };
-    let message = encrypted_vote.to_bytes();
+    let genesis_hash = frame_system::Pallet::<T>::block_hash(
+        BlockNumberFor::<T>::from(0u32)
+    );
+    let message = encrypted_vote.construct_message(genesis_hash.as_ref(), poll_id);
 
     let signature = BLSAG::sign::<blake2::Blake2b512, OsRng>(
         student_private_key,
@@ -116,21 +151,15 @@ mod benchmarks {
     fn register_ring() {
         let caller = get_admin::<T>();
         let ring = generate_test_ring(RING_SIZE);
-        
+
         // 提前注册公钥并收集 IDs
-        let mut student_ids = Vec::new();
-        for pk in ring {
-            let id = RingSigVoting::<T>::next_student_id();
-            RingSigVoting::<T>::register_student_key(RawOrigin::Signed(caller.clone()).into(), pk).unwrap();
-            student_ids.push(id);
-        }
+        let student_ids = register_keys_and_get_ids::<T>(&caller, &ring);
 
         #[extrinsic_call]
         _(RawOrigin::Signed(caller), student_ids);
 
         assert_eq!(RingSigVoting::<T>::ring_count(), 1);
     }
-
 
     // ---------- create_poll ----------
 
@@ -139,9 +168,9 @@ mod benchmarks {
         let admin = get_admin::<T>();
         let teacher = get_teacher::<T>();
 
-        // 1. 注册 Ring
+        // 1. 注册公钥并组建 Ring
         let ring = generate_test_ring(RING_SIZE);
-        RingSigVoting::<T>::register_ring(RawOrigin::Signed(admin.clone()).into(), ring).unwrap();
+        setup_ring::<T>(&admin, &ring);
 
         // 2. 授权 Teacher
         RingSigVoting::<T>::authorize_teacher(RawOrigin::Signed(admin).into(), teacher.clone())
@@ -173,13 +202,12 @@ mod benchmarks {
         let admin = get_admin::<T>();
         let teacher = get_teacher::<T>();
 
-        // 1. 生成投票数据
+        // 1. 生成投票数据（包含完整的 ring 公钥列表）
         let (ephemeral_public_key, ciphertext, challenge, responses, sig_ring, key_image) =
-            create_test_vote::<T>(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT);
+            create_test_vote::<T>(RING_SIZE, SECRET_INDEX, SIMPLE_CIPHERTEXT, 0);
 
-        // 2. 注册 Ring
-        RingSigVoting::<T>::register_ring(RawOrigin::Signed(admin.clone()).into(), sig_ring)
-            .unwrap();
+        // 2. 注册公钥并组建 Ring
+        setup_ring::<T>(&admin, &sig_ring);
 
         // 3. 授权 Teacher 并创建 Poll
         RingSigVoting::<T>::authorize_teacher(RawOrigin::Signed(admin).into(), teacher.clone())
@@ -217,9 +245,9 @@ mod benchmarks {
         let admin = get_admin::<T>();
         let teacher = get_teacher::<T>();
 
-        // 1. 准备环境
+        // 1. 注册公钥并组建 Ring
         let ring = generate_test_ring(RING_SIZE);
-        RingSigVoting::<T>::register_ring(RawOrigin::Signed(admin.clone()).into(), ring).unwrap();
+        setup_ring::<T>(&admin, &ring);
 
         RingSigVoting::<T>::authorize_teacher(
             RawOrigin::Signed(admin.clone()).into(),
@@ -253,7 +281,7 @@ mod benchmarks {
         let teacher = get_teacher::<T>();
 
         let ring = generate_test_ring(RING_SIZE);
-        RingSigVoting::<T>::register_ring(RawOrigin::Signed(admin.clone()).into(), ring).unwrap();
+        setup_ring::<T>(&admin, &ring);
 
         RingSigVoting::<T>::authorize_teacher(RawOrigin::Signed(admin).into(), teacher.clone())
             .unwrap();
@@ -286,7 +314,7 @@ mod benchmarks {
         let teacher = get_teacher::<T>();
 
         let ring = generate_test_ring(RING_SIZE);
-        RingSigVoting::<T>::register_ring(RawOrigin::Signed(admin.clone()).into(), ring).unwrap();
+        setup_ring::<T>(&admin, &ring);
 
         RingSigVoting::<T>::authorize_teacher(RawOrigin::Signed(admin).into(), teacher.clone())
             .unwrap();
@@ -319,7 +347,7 @@ mod benchmarks {
         let teacher = get_teacher::<T>();
 
         let ring = generate_test_ring(RING_SIZE);
-        RingSigVoting::<T>::register_ring(RawOrigin::Signed(admin.clone()).into(), ring).unwrap();
+        setup_ring::<T>(&admin, &ring);
 
         RingSigVoting::<T>::authorize_teacher(RawOrigin::Signed(admin).into(), teacher.clone())
             .unwrap();
@@ -358,7 +386,7 @@ mod benchmarks {
         let teacher = get_teacher::<T>();
 
         let ring = generate_test_ring(RING_SIZE);
-        RingSigVoting::<T>::register_ring(RawOrigin::Signed(admin.clone()).into(), ring).unwrap();
+        setup_ring::<T>(&admin, &ring);
 
         RingSigVoting::<T>::authorize_teacher(RawOrigin::Signed(admin).into(), teacher.clone())
             .unwrap();
@@ -390,9 +418,9 @@ mod benchmarks {
         let admin = get_admin::<T>();
         let teacher = get_teacher::<T>();
 
-        // 1. 准备环境
+        // 1. 注册公钥并组建 Ring
         let ring = generate_test_ring(RING_SIZE);
-        RingSigVoting::<T>::register_ring(RawOrigin::Signed(admin.clone()).into(), ring).unwrap();
+        setup_ring::<T>(&admin, &ring);
 
         RingSigVoting::<T>::authorize_teacher(
             RawOrigin::Signed(admin.clone()).into(),
@@ -474,9 +502,9 @@ mod benchmarks {
         let teacher = get_teacher::<T>();
         let new_owner: T::AccountId = account("new_owner", 0, 0);
 
-        // 1. 准备环境
+        // 1. 注册公钥并组建 Ring
         let ring = generate_test_ring(RING_SIZE);
-        RingSigVoting::<T>::register_ring(RawOrigin::Signed(admin.clone()).into(), ring).unwrap();
+        setup_ring::<T>(&admin, &ring);
 
         RingSigVoting::<T>::authorize_teacher(
             RawOrigin::Signed(admin.clone()).into(),
