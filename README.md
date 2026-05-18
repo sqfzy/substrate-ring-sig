@@ -5,7 +5,14 @@
 
 <div align="center">
 
-
+# 项目声明 Project Statement
+本项目的作者及单位：
+The author and affiliation of this project:
+```
+项目名称（Project Name）: rutin
+项目作者（Author): JiangTao
+作者单位（Affiliation）：暨南大学网络空间安全学院（college of Cyber Security，Jinan University）
+```
 
 # Polkadot SDK's Parachain Template
 
